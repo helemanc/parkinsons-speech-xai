@@ -3,6 +3,7 @@ import torch
 import random
 import torchaudio
 import librosa
+import numpy as np 
 from torch.utils.data import Dataset
 from transformers import AutoFeatureExtractor
 from typing import List, Dict
@@ -71,25 +72,32 @@ class AudioClassificationDataset(Dataset):
     '''
 
     def _load_audio(self, audio_path):
-        audio, sr = torchaudio.load(audio_path)
-        #audio, sr = librosa.load(audio_path, sr=None, mono=False)
-        #Resample if needed
-        if sr != self.feature_extractor.sampling_rate:
-            resampler = torchaudio.transforms.Resample(sr, self.feature_extractor.sampling_rate)
-            audio = resampler(audio)
-        # # Resample if needed
+        # audio, sr = torchaudio.load(audio_path)
+        # #audio, sr = librosa.load(audio_path, sr=None, mono=False)
+        # #Resample if needed
         # if sr != self.feature_extractor.sampling_rate:
-        #     audio = librosa.resample(audio, orig_sr=sr, target_sr=self.feature_extractor.sampling_rate)
+        #     resampler = torchaudio.transforms.Resample(sr, self.feature_extractor.sampling_rate)
+        #     audio = resampler(audio)
+        # # # Resample if needed
+        # # if sr != self.feature_extractor.sampling_rate:
+        # #     audio = librosa.resample(audio, orig_sr=sr, target_sr=self.feature_extractor.sampling_rate)
         
-        # convert to tensor
-        #audio = torch.tensor(audio).unsqueeze(0)
+        # # convert to tensor
+        # #audio = torch.tensor(audio).unsqueeze(0)
 
-        # convert to mono if needed
-        if audio.shape[0] > 1:
-            audio = torch.mean(audio, dim=0, keepdim=True)
+        # # convert to mono if needed
+        # if audio.shape[0] > 1:
+        #     audio = torch.mean(audio, dim=0, keepdim=True)
 
-        # remove empty dimensions
-        audio = torch.squeeze(audio)
+        # # remove empty dimensions
+        # audio = torch.squeeze(audio)
+        # return audio
+        audio, sr = librosa.load(audio_path, sr=self.data_config.sample_rate)
+        if len(audio.shape) > 1:
+            audio = audio.mean(axis=0)
+        audio = audio / np.max(np.abs(audio))
+        audio = audio.squeeze()
+        audio = torch.tensor(audio, dtype=torch.float32)
         return audio
     
 
