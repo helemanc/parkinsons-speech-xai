@@ -1,0 +1,19 @@
+{
+    // Usare IntelliSense per informazioni sui possibili attributi.
+    // Al passaggio del mouse vengono visualizzate le descrizioni degli attributi esistenti.
+    // Per altre informazioni, visitare: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debugger Python: File corrente con argomenti",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": [
+                "--config", "configs/W_config.yaml",
+                "--training.checkpoint_path", "/mnt/hdd/emancini/Repositories_Ele/parkinsons-speech-interpretability/checkpoints/SSL4PR-wavlm-base/"
+            ]
+        }
+    ]
+}

@@ -72,10 +72,17 @@ class AudioClassificationDataset(Dataset):
 
     def _load_audio(self, audio_path):
         audio, sr = torchaudio.load(audio_path)
-        # Resample if needed
+        #audio, sr = librosa.load(audio_path, sr=None, mono=False)
+        #Resample if needed
         if sr != self.feature_extractor.sampling_rate:
             resampler = torchaudio.transforms.Resample(sr, self.feature_extractor.sampling_rate)
             audio = resampler(audio)
+        # # Resample if needed
+        # if sr != self.feature_extractor.sampling_rate:
+        #     audio = librosa.resample(audio, orig_sr=sr, target_sr=self.feature_extractor.sampling_rate)
+        
+        # convert to tensor
+        #audio = torch.tensor(audio).unsqueeze(0)
 
         # convert to mono if needed
         if audio.shape[0] > 1:
@@ -85,6 +92,7 @@ class AudioClassificationDataset(Dataset):
         audio = torch.squeeze(audio)
         return audio
     
+
     # def _apply_augmentations(self, audio):
     #     '''
     #     If enabled in config, this functions apply augmentations to the audio signal
