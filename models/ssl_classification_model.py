@@ -302,29 +302,31 @@ class SSLClassificationModel(nn.Module):
         combined_features = torch.cat([ssl_features, magnitudes], dim=-1)
         return combined_features
 
-    def forward(self, batch, **kwargs):
+    def forward(self, ssl_input, phase=None, **kwargs):
 
         features = None
 
         if self.ssl:
             # forward pass through SSL model
             if self.is_whisper:
-                ssl_input = batch["input_features"]
-            else:
-                ssl_input = batch["input_values"]
+                raise Exception("Attributions not implemented for Whisper.")
+                #  ssl_input = batch["input_features"]
+                # else:
+                # ssl_input = batch["input_values"]
 
             # Required to compute gradient wrt to spec
-            spec, phase = self.tf(ssl_input)
-            wav = self.tf.invert_stft_with_phase(spec, phase)
+            if phase is not None:  # has spec and phase
+                ssl_input = self.tf.invert_stft_with_phase(ssl_input, phase)
 
-            features = self.get_ssl_features(wav)
+            features = self.get_ssl_features(ssl_input)
 
         if self.use_magnitudes:
-            magnitudes = batch["magnitudes"]
-            if self.config.model.frame_fusion:
-                features = self._combine_features(features, magnitudes)
-            else:
-                features = magnitudes
+            raise Exception("Attributions not implemented for use_magnitudes.")
+            # magnitudes = batch["magnitudes"]
+            # if self.config.model.frame_fusion:
+            # features = self._combine_features(features, magnitudes)
+            # else:
+            # features = magnitudes
 
         if features is not None:
             if self.classifier_type == "average_pooling":
