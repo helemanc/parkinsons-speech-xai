@@ -89,14 +89,15 @@ def eval_one_epoch(
             batch["input_values"], phase = tf(batch["input_values"])
 
             outputs = model(batch["input_values"], phase=phase)
+
             attr = saliency.attribute(
                 batch["input_values"],
-                target=labels.long(),
+                #target=labels.to(torch.long),
                 additional_forward_args=(phase),
             )
 
             print(attr.shape)
-            breakpoint()
+            #breakpoint()
             n_classes = outputs.shape[-1]
 
             # Calculate loss
