@@ -7,14 +7,17 @@ import torch
 import torch.nn.functional as F
 from addict import Dict
 from captum.attr import Saliency
-from sklearn.metrics import (accuracy_score, confusion_matrix,
-                             precision_recall_fscore_support, roc_auc_score)
+from sklearn.metrics import (
+    accuracy_score,
+    confusion_matrix,
+    precision_recall_fscore_support,
+    roc_auc_score,
+)
 from tqdm import tqdm
 from yaml_config_override import add_arguments
 
 from datasets.audio_classification_dataset import AudioClassificationDataset
-from models.ssl_classification_model import (InvertibleTF,
-                                             SSLClassificationModel)
+from models.ssl_classification_model import InvertibleTF, SSLClassificationModel
 
 
 def compute_metrics(
@@ -89,12 +92,12 @@ def eval_one_epoch(
             with torch.enable_grad():
                 attr = saliency.attribute(
                     batch["input_values"],
-                    target=labels.long(),
+                    # target=labels.to(torch.long),
                     additional_forward_args=(phase),
                 )
 
             print(attr.shape)
-            breakpoint()
+            # breakpoint()
             n_classes = outputs.shape[-1]
 
             # Calculate loss
