@@ -7,6 +7,8 @@ import torch
 import torch.nn.functional as F
 from addict import Dict
 from captum.attr import Saliency
+from captum.attr import visualization as viz
+
 from sklearn.metrics import (
     accuracy_score,
     confusion_matrix,
@@ -19,6 +21,9 @@ from yaml_config_override import add_arguments
 from datasets.audio_classification_dataset import AudioClassificationDataset
 from models.ssl_classification_model import InvertibleTF, SSLClassificationModel
 
+from speechbrain.utils.metric_stats import MetricStats
+
+eps = 1e-10
 
 def compute_metrics(
     reference, predictions, verbose=False, is_binary_classification=False
@@ -63,6 +68,240 @@ def compute_metrics(
     }
 
 
+def compute_fidelity(theta_out, predictions):
+    """Computes top-`k` fidelity of interpreter."""
+    pred_cl = torch.argmax(predictions, dim=1)
+    k_top = torch.topk(theta_out, k=1, dim=1)[1]
+
+    # 1 element for each sample in batch, is 0 if pred_cl is in top k
+    temp = (k_top - pred_cl.unsqueeze(1) == 0).sum(1)
+
+    return temp
+
+@torch.no_grad()
+def compute_faithfulness(predictions, predictions_masked):
+    "This function implements the faithful metric (FF) used in the L-MAC paper."
+    # get the prediction indices
+    pred_cl = predictions.argmax(dim=1, keepdim=True)
+
+    # get the corresponding output probabilities
+    predictions_selected = torch.gather(
+        predictions, dim=1, index=pred_cl
+    )
+    predictions_masked_selected = torch.gather(
+        predictions_masked, dim=1, index=pred_cl
+    )
+
+    faithfulness = (
+        predictions_selected - predictions_masked_selected
+    ).squeeze(dim=1)
+
+    return faithfulness
+
+@torch.no_grad()
+def compute_AD(theta_out, predictions):
+    """Computes top-`k` fidelity of interpreter."""
+    predictions = F.softmax(predictions, dim=1)
+    theta_out = F.softmax(theta_out, dim=1)
+
+    pc = torch.gather(
+        predictions, dim=1, index=predictions.argmax(1, keepdim=True)
+    ).squeeze()
+    oc = torch.gather(
+        theta_out, dim=1, index=predictions.argmax(1, keepdim=True)
+    ).squeeze(dim=1)
+
+    # 1 element for each sample in batch, is 0 if pred_cl is in top k
+    temp = (F.relu(pc - oc) / (pc + eps)) * 100
+
+    return temp
+
+@torch.no_grad()
+def compute_AI(theta_out, predictions):
+    """Computes top-`k` fidelity of interpreter."""
+    pc = torch.gather(
+        predictions, dim=1, index=predictions.argmax(1, keepdim=True)
+    ).squeeze()
+    oc = torch.gather(
+        theta_out, dim=1, index=predictions.argmax(1, keepdim=True)
+    ).squeeze(dim=1)
+
+    # 1 element for each sample in batch, is 0 if pred_cl is in top k
+    temp = (pc < oc).float() * 100
+
+    return temp
+
+@torch.no_grad()
+def compute_AG(theta_out, predictions):
+    """Computes top-`k` fidelity of interpreter."""
+    pc = torch.gather(
+        predictions, dim=1, index=predictions.argmax(1, keepdim=True)
+    ).squeeze()
+    oc = torch.gather(
+        theta_out, dim=1, index=predictions.argmax(1, keepdim=True)
+    ).squeeze(dim=1)
+
+    # 1 element for each sample in batch, is 0 if pred_cl is in top k
+    temp = (F.relu(oc - pc) / (1 - pc + eps)) * 100
+
+    return temp
+
+@torch.no_grad()
+# def compute_sparseness(wavs, X, y):
+#     """Computes the SPS metric used in the L-MAC paper."""
+#     sparseness = quantus.Sparseness(
+#         return_aggregate=True, abs=True
+#     )
+#     device = X.device
+#     attr = (
+#         self.interpret_computation_steps(wavs)#[1]
+#         .transpose(1, 2)
+#         .unsqueeze(1)
+#         .clone()
+#         .detach()
+#         .cpu()
+#         .numpy()
+
+#     )
+#     if attr.sum() > 0:
+#         X = X[:, : attr.shape[2], :]
+#         X = X.unsqueeze(1)
+#         quantus_inp = {
+#             "model": None,
+#             "x_batch": X.clone()
+#             .detach()
+#             .cpu()
+#             .numpy(),  # quantus expects the batch dim
+#             "a_batch": attr,
+#             "y_batch": y.squeeze(dim=1).clone().detach().cpu().numpy(),
+#             "softmax": False,
+#             "device": device,
+#         }
+#         return torch.Tensor([self.sparseness(**quantus_inp)[0]]).float()
+#     else:
+#         print("all zeros saliency map")
+#         return torch.zeros([0])
+
+# @torch.no_grad()
+# def compute_complexity(wavs, X, y):
+#     """Computes the COMP metric used in L-MAC paper"""
+#     self.complexity = quantus.Complexity(
+#         return_aggregate=True, abs=True
+#     )
+#     device = X.device
+#     attr = (
+#         self.interpret_computation_steps(wavs)#[1]
+#         .transpose(1, 2)
+#         .unsqueeze(1)
+#         .clone()
+#         .detach()
+#         .cpu()
+#         .numpy()
+#     )
+#     if attr.sum() > 0:
+#         X = X[:, : attr.shape[2], :]
+#         X = X.unsqueeze(1)
+#         quantus_inp = {
+#             "model": None,
+#             "x_batch": X.clone()
+#             .detach()
+#             .cpu()
+#             .numpy(),  # quantus expects the batch dim
+#             "a_batch": attr,
+#             "y_batch": y.squeeze(dim=1).clone().detach().cpu().numpy(),
+#             "softmax": False,
+#             "device": device,
+#         }
+
+#         return torch.Tensor([self.complexity(**quantus_inp)[0]]).float()
+#     else:
+#         print("all zeros saliency map")
+#         return torch.zeros([0])
+
+@torch.no_grad()
+def accuracy_value(predict, target):
+    """Computes Accuracy"""
+    predict = predict.argmax(1)
+
+    return (predict.unsqueeze(1) == target).float().squeeze(1)
+
+def compute_interpretability_metrics(predictions, predictions_masked, theta_out, reference): 
+    """
+    Compute interpretability metrics.
+    """
+
+    return{
+        "AD": compute_AD(theta_out, predictions).mean().item(),
+        "AI": compute_AI(theta_out, predictions).mean().item(),
+        "AG": compute_AG(theta_out, predictions).mean().item(),
+        "inp_fid": compute_fidelity(theta_out, predictions).float().mean().item(),
+        "faithfulness": compute_faithfulness(predictions, predictions_masked).mean().item(),
+    }
+
+
+def plot_spectrograms_with_mask(original, attr):
+    """
+    Plots the original spectrogram, the normalized mask, and the saliency map in a single figure.
+    
+    Parameters:
+    - original: np.ndarray, the original spectrogram.
+    - attr: np.ndarray, the attribute (mask) used for saliency calculation.
+    """
+
+    # Normalize the mask (attr)
+    mask_normalized = (attr - np.min(attr)) / (np.max(attr) - np.min(attr))
+
+    # Create the saliency map by multiplying the original spectrogram with the normalized mask
+    saliency_map = original * mask_normalized  # Element-wise multiplication
+
+    # Create a single figure with 3 subplots
+    fig, axs = plt.subplots(1, 3, figsize=(15, 5))  # Adjust the figsize as needed
+
+    # Expand dimensions for plotting first element in the batch
+    original = np.expand_dims(original.T, axis=-1)
+    mask_normalized = np.expand_dims(mask_normalized.T, axis=-1)
+    saliency_map = np.expand_dims(saliency_map.T, axis=-1)
+
+    # Plot the original spectrogram (flipped vertically)
+    cax0 = axs[0].imshow(original, aspect='auto', cmap='plasma', origin='lower')
+    axs[0].set_title("Original Spectrogram")
+    axs[0].set_ylabel("Frequency")
+    axs[0].set_xlabel("Time")
+    plt.colorbar(cax0, ax=axs[0])
+
+    # Plot the normalized mask (flipped vertically)
+    cax1 = axs[1].imshow(mask_normalized, aspect='auto', cmap='plasma', origin='lower')
+    axs[1].set_title("Normalized Mask")
+    axs[1].set_xlabel("Time")
+    plt.colorbar(cax1, ax=axs[1])
+
+    # Plot the saliency map (flipped vertically)
+    cax2 = axs[2].imshow(saliency_map, aspect='auto', cmap='plasma', origin='lower')
+    axs[2].set_title("Saliency Map")
+    axs[2].set_xlabel("Time")
+    plt.colorbar(cax2, ax=axs[2])
+
+    # Set tick marks for the time axis
+    # Choose specific ticks (e.g., every 100 units)
+    time_ticks = np.arange(0, original.shape[1], 100)  # Adjust based on your data
+    axs[0].set_xticks(time_ticks)
+    axs[1].set_xticks(time_ticks)
+    axs[2].set_xticks(time_ticks)
+
+    # Optionally, set frequency ticks (for y-axis)
+    frequency_ticks = np.arange(0, original.shape[0], 100)  # Adjust based on your data
+    axs[0].set_yticks(frequency_ticks)
+    axs[1].set_yticks(frequency_ticks)
+    axs[2].set_yticks(frequency_ticks)
+
+    # Adjust layout to prevent overlap
+    plt.tight_layout()
+
+    # Save the final figure as one image
+    plt.savefig("combined_visualization.png", format="png", dpi=300, bbox_inches="tight")
+    plt.show()
+    
+
 def eval_one_epoch(
     model, eval_dataloader, device, loss_fn, is_binary_classification=False
 ):
@@ -96,7 +335,18 @@ def eval_one_epoch(
                     additional_forward_args=(phase),
                 )
 
+            predictions_masked = model(batch["input_values"], mask = 1-attr, phase=phase) # mask_out
+            theta = model(batch["input_values"], mask = attr, phase=phase) #mask_in
+
             print(attr.shape)
+
+            # show original and attributions
+            original = batch["input_values"].squeeze().cpu().numpy()
+            attr = attr.squeeze().cpu().numpy()
+            
+            # save the original and attributions for first element in the batch 
+            #plot_spectrograms_with_mask(original[0], attr[0])
+            
             # breakpoint()
             n_classes = outputs.shape[-1]
 
@@ -119,7 +369,7 @@ def eval_one_epoch(
 
             p_bar.set_postfix({"loss": loss.item()})
 
-    return eval_loss / len(eval_dataloader), reference, predictions, speakers
+    return eval_loss / len(eval_dataloader), reference, predictions, speakers, attr, original, predictions_masked, theta
 
 
 def get_dataloaders(test_path, class_mapping, config):
@@ -189,6 +439,12 @@ def main(config):
             "roc_auc",
             "sensitivity",
             "specificity",
+            "AD", 
+            "AI",
+            "AG",
+            "inp_fid",
+            "faithfulness",
+                
         ]
     }
 
@@ -208,7 +464,7 @@ def main(config):
         test_dl = get_dataloaders(test_path, class_mapping, config)
 
         # Evaluate
-        test_loss, test_reference, test_predictions, test_speaker = eval_one_epoch(
+        test_loss, test_reference, test_predictions, test_speaker, attr, original, predictions_masked, theta = eval_one_epoch(
             model=model,
             eval_dataloader=test_dl,
             device=device,
@@ -224,11 +480,23 @@ def main(config):
             is_binary_classification=is_binary_classification,
         )
 
+        # Compure interpretability metrics 
+        interpretability_metrics = compute_interpretability_metrics(predictions=predictions_masked, predictions_masked=predictions_masked, theta_out=theta, reference=test_reference)
+
+
+
         # Print metrics
         print(f"-" * 20, f"Fold {test_fold} Results", "-" * 20)
         for k, v in metrics.items():
             print(f"{k}: {v}")
             overall_metrics[k].append(v)
+
+        # Print interpretability metrics 
+        print(f"-" * 20, f"Fold {test_fold} Interpretability Metrics", "-" * 20)
+        for k, v in interpretability_metrics.items():
+            print(f"{k}: {v}")
+            overall_metrics[k].append(v)
+        
 
         # clear memory
         del model

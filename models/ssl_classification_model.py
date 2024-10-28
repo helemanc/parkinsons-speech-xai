@@ -302,7 +302,7 @@ class SSLClassificationModel(nn.Module):
         combined_features = torch.cat([ssl_features, magnitudes], dim=-1)
         return combined_features
 
-    def forward(self, ssl_input, phase=None, **kwargs):
+    def forward(self, ssl_input, phase=None, mask=None,  **kwargs):
 
         features = None
 
@@ -313,6 +313,9 @@ class SSLClassificationModel(nn.Module):
                 #  ssl_input = batch["input_features"]
                 # else:
                 # ssl_input = batch["input_values"]
+
+            if mask is not None:
+               ssl_input = ssl_input * mask
 
             # Required to compute gradient wrt to spec
             if phase is not None:  # has spec and phase
