@@ -511,7 +511,10 @@ def main(config):
     # Print overall metrics
     print("\nOverall Metrics:")
     for k, v in overall_metrics.items():
-        print(f"{k}: {np.mean(v)*100:.3f}")
+        if k == "AD" or k == "AI" or k == "AG" or k == "inp_fid" or k == "faithfulness":
+            print(f"{k}: {np.mean(v):.3f}")
+        else: 
+            print(f"{k}: {np.mean(v)*100:.3f}")
 
 
 if __name__ == "__main__":
