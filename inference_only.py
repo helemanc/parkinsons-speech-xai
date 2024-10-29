@@ -6,7 +6,7 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 from addict import Dict
-from captum.attr import Saliency
+from captum.attr import IntegratedGradients, Saliency
 from captum.attr import visualization as viz
 from sklearn.metrics import (accuracy_score, confusion_matrix,
                              precision_recall_fscore_support, roc_auc_score)
@@ -19,6 +19,11 @@ from models.ssl_classification_model import (InvertibleTF,
                                              SSLClassificationModel)
 
 eps = 1e-10
+
+int_strategies = {"saliency": Saliency, "ig": IntegratedGradients}
+adds_params = {"saliency": {}, "ig": {"n_steps": 5}}
+
+strategy = "ig"
 
 
 def compute_metrics(
@@ -291,6 +296,8 @@ def eval_one_epoch(
     model, eval_dataloader, device, loss_fn, is_binary_classification=False
 ):
     model.eval()
+    if strategy == "ig":
+        model = model.double()
 
     p_bar = tqdm(eval_dataloader, total=len(eval_dataloader), ncols=100)
     eval_loss = 0.0
@@ -299,7 +306,7 @@ def eval_one_epoch(
     speakers = []
 
     tf = InvertibleTF()
-    saliency = Saliency(model)
+    saliency = int_strategies[strategy](model)
 
     with torch.no_grad():
         # with torch.enable_grad():
@@ -311,6 +318,9 @@ def eval_one_epoch(
             }
             labels = batch["labels"]
             batch["input_values"], phase = tf(batch["input_values"])
+            if strategy == "ig":
+                batch["input_values"] = batch["input_values"].double()
+                phase = phase.double()
 
             outputs = model(batch["input_values"], phase=phase)
             with torch.enable_grad():
@@ -318,14 +328,13 @@ def eval_one_epoch(
                     batch["input_values"],
                     # target=labels.to(torch.long),
                     additional_forward_args=(phase),
+                    **adds_params[strategy],
                 )
 
             predictions_masked = model(
                 batch["input_values"], mask=1 - attr, phase=phase
             )  # mask_out
             theta = model(batch["input_values"], mask=attr, phase=phase)  # mask_in
-
-            print(attr.shape)
 
             # show original and attributions
             original = batch["input_values"].squeeze().cpu().numpy()
