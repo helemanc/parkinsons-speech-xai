@@ -162,4 +162,4 @@ cython_debug/
 #.idea/
 
 checkpoints/
-combined_visualization.png
+interpretations/

@@ -18,12 +18,23 @@ from datasets.audio_classification_dataset import AudioClassificationDataset
 from models.ssl_classification_model import (InvertibleTF,
                                              SSLClassificationModel)
 
+import librosa
+import librosa.display
+
+import torchaudio
+
+from speechbrain.processing.features import ISTFT, STFT
+import speechbrain as sb
+
+from utils import viz
+
+
 eps = 1e-10
 
 int_strategies = {"saliency": Saliency, "ig": IntegratedGradients}
 adds_params = {"saliency": {}, "ig": {"n_steps": 5}}
 
-strategy = "ig"
+strategy = "saliency"
 
 
 def compute_metrics(
@@ -87,7 +98,7 @@ def compute_faithfulness(predictions, predictions_masked):
     pred_cl = (predictions > 0.5).float()
     predictions_masked_selected = (predictions_masked > 0.5).float()
 
-    faithfulness = (pred_cl - predictions_masked_selected).squeeze(dim=1)
+    faithfulness = (pred_cl - predictions_masked_selected)#.squeeze(dim=1)
 
     return faithfulness
 
@@ -227,73 +238,8 @@ def compute_interpretability_metrics(
     }
 
 
-def plot_spectrograms_with_mask(original, attr):
-    """
-    Plots the original spectrogram, the normalized mask, and the saliency map in a single figure.
-
-    Parameters:
-    - original: np.ndarray, the original spectrogram.
-    - attr: np.ndarray, the attribute (mask) used for saliency calculation.
-    """
-
-    # Normalize the mask (attr)
-    mask_normalized = (attr - np.min(attr)) / (np.max(attr) - np.min(attr))
-
-    # Create the saliency map by multiplying the original spectrogram with the normalized mask
-    saliency_map = original * mask_normalized  # Element-wise multiplication
-
-    # Create a single figure with 3 subplots
-    fig, axs = plt.subplots(1, 3, figsize=(15, 5))  # Adjust the figsize as needed
-
-    # Expand dimensions for plotting first element in the batch
-    original = np.expand_dims(original.T, axis=-1)
-    mask_normalized = np.expand_dims(mask_normalized.T, axis=-1)
-    saliency_map = np.expand_dims(saliency_map.T, axis=-1)
-
-    # Plot the original spectrogram (flipped vertically)
-    cax0 = axs[0].imshow(original, aspect="auto", cmap="plasma", origin="lower")
-    axs[0].set_title("Original Spectrogram")
-    axs[0].set_ylabel("Frequency")
-    axs[0].set_xlabel("Time")
-    plt.colorbar(cax0, ax=axs[0])
-
-    # Plot the normalized mask (flipped vertically)
-    cax1 = axs[1].imshow(mask_normalized, aspect="auto", cmap="plasma", origin="lower")
-    axs[1].set_title("Normalized Mask")
-    axs[1].set_xlabel("Time")
-    plt.colorbar(cax1, ax=axs[1])
-
-    # Plot the saliency map (flipped vertically)
-    cax2 = axs[2].imshow(saliency_map, aspect="auto", cmap="plasma", origin="lower")
-    axs[2].set_title("Saliency Map")
-    axs[2].set_xlabel("Time")
-    plt.colorbar(cax2, ax=axs[2])
-
-    # Set tick marks for the time axis
-    # Choose specific ticks (e.g., every 100 units)
-    time_ticks = np.arange(0, original.shape[1], 100)  # Adjust based on your data
-    axs[0].set_xticks(time_ticks)
-    axs[1].set_xticks(time_ticks)
-    axs[2].set_xticks(time_ticks)
-
-    # Optionally, set frequency ticks (for y-axis)
-    frequency_ticks = np.arange(0, original.shape[0], 100)  # Adjust based on your data
-    axs[0].set_yticks(frequency_ticks)
-    axs[1].set_yticks(frequency_ticks)
-    axs[2].set_yticks(frequency_ticks)
-
-    # Adjust layout to prevent overlap
-    plt.tight_layout()
-
-    # Save the final figure as one image
-    plt.savefig(
-        "combined_visualization.png", format="png", dpi=300, bbox_inches="tight"
-    )
-    plt.show()
-
-
 def eval_one_epoch(
-    model, eval_dataloader, device, loss_fn, is_binary_classification=False
+    model, eval_dataloader, device, loss_fn, fold_dir, is_binary_classification=False
 ):
     model.eval()
     if strategy == "ig":
@@ -304,6 +250,10 @@ def eval_one_epoch(
     reference = []
     predictions = []
     speakers = []
+    predictions_masked_list = []
+    theta_list = []
+    outputs_list = []
+
 
     tf = InvertibleTF()
     saliency = int_strategies[strategy](model)
@@ -336,13 +286,17 @@ def eval_one_epoch(
             )  # mask_out
             theta = model(batch["input_values"], mask=attr, phase=phase)  # mask_in
 
-            # show original and attributions
+            predictions_masked_list.extend(predictions_masked.cpu())
+            theta_list.extend(theta.cpu())
+            outputs_list.extend(outputs.cpu())
+
+            print(attr.shape)
+
+            # original and attributions
             original = batch["input_values"].squeeze().cpu().numpy()
             attr = attr.squeeze().cpu().numpy()
 
-            # save the original and attributions for first element in the batch
-            # plot_spectrograms_with_mask(original[0], attr[0])
-
+    
             # breakpoint()
             n_classes = outputs.shape[-1]
 
@@ -362,8 +316,17 @@ def eval_one_epoch(
                 predictions.extend(
                     torch.argmax(outputs, dim=-1).cpu().numpy().astype(int)
                 )
+            
+            viz.save_interpretations_for_conditions(fold_dir, original, attr, phase, labels, predictions, tf, sample_rate=16000)
 
             p_bar.set_postfix({"loss": loss.item()})
+
+    # predictions_masked = np.array(predictions_masked_list.cpu())
+    # theta = np.array(theta_list.cpu())
+
+    predictions_masked_tensor = torch.stack(predictions_masked_list)
+    theta_tensor = torch.stack(theta_list)
+    outputs_tensor = torch.stack(outputs_list)
 
     return (
         eval_loss / len(eval_dataloader),
@@ -372,8 +335,9 @@ def eval_one_epoch(
         speakers,
         attr,
         original,
-        predictions_masked,
-        theta,
+        predictions_masked_tensor,
+        theta_tensor,
+        outputs_tensor,
     )
 
 
@@ -418,6 +382,7 @@ def get_speaker_disease_grade(test_path):
 
 
 def main(config):
+    int_method = 'saliency'
     # Set device
     device = torch.device(
         "cuda" if torch.cuda.is_available() and config.training.use_cuda else "cpu"
@@ -452,6 +417,18 @@ def main(config):
         ]
     }
 
+    # Create interptretations dir 
+    # Define the base directory for interpretations
+    base_dir = "interpretations"
+
+    # Ensure the base directory exists
+    if not os.path.exists(base_dir):
+        os.makedirs(base_dir)
+    
+    int_dir = os.path.join(base_dir, int_method)
+    if not os.path.exists(int_dir):
+        os.makedirs(int_dir)
+
     for test_fold in range(1, 11):
         # Load fold model
         config.model.num_classes = len(class_mapping)
@@ -467,6 +444,12 @@ def main(config):
         test_path = f"{config.data.fold_root_path}/TRAIN_TEST_{test_fold}/test.csv"
         test_dl = get_dataloaders(test_path, class_mapping, config)
 
+
+        # Create fold_dir if it does not exist
+        fold_dir = os.path.join(int_dir, f"fold_{test_fold}")
+        if not os.path.exists(fold_dir):
+            os.makedirs(fold_dir)
+
         # Evaluate
         (
             test_loss,
@@ -477,11 +460,13 @@ def main(config):
             original,
             predictions_masked,
             theta,
+            outputs
         ) = eval_one_epoch(
             model=model,
             eval_dataloader=test_dl,
             device=device,
             loss_fn=loss_fn,
+            fold_dir = fold_dir,
             is_binary_classification=is_binary_classification,
         )
 
@@ -495,7 +480,7 @@ def main(config):
 
         # Compure interpretability metrics
         interpretability_metrics = compute_interpretability_metrics(
-            predictions=predictions_masked,
+            predictions=outputs,
             predictions_masked=predictions_masked,
             theta_out=theta,
             reference=test_reference,
