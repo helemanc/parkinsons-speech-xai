@@ -28,6 +28,8 @@ import speechbrain as sb
 
 from utils import viz
 
+import quantus 
+
 
 eps = 1e-10
 
@@ -140,76 +142,72 @@ def compute_AG(theta_out, predictions):
 
 
 @torch.no_grad()
-# def compute_sparseness(wavs, X, y):
-#     """Computes the SPS metric used in the L-MAC paper."""
-#     sparseness = quantus.Sparseness(
-#         return_aggregate=True, abs=True
-#     )
-#     device = X.device
-#     attr = (
-#         self.interpret_computation_steps(wavs)#[1]
-#         .transpose(1, 2)
-#         .unsqueeze(1)
-#         .clone()
-#         .detach()
-#         .cpu()
-#         .numpy()
+def compute_sparseness(attr, X, y):
+    """Computes the SPS metric used in the L-MAC paper."""
+    sparseness = quantus.Sparseness(
+        return_aggregate=True, abs=True
+    )
+    device = X.device
+    attr = ( 
+        attr.unsqueeze(1)
+        .clone()
+        .detach()
+        .cpu()
+        .numpy()
 
-#     )
-#     if attr.sum() > 0:
-#         X = X[:, : attr.shape[2], :]
-#         X = X.unsqueeze(1)
-#         quantus_inp = {
-#             "model": None,
-#             "x_batch": X.clone()
-#             .detach()
-#             .cpu()
-#             .numpy(),  # quantus expects the batch dim
-#             "a_batch": attr,
-#             "y_batch": y.squeeze(dim=1).clone().detach().cpu().numpy(),
-#             "softmax": False,
-#             "device": device,
-#         }
-#         return torch.Tensor([self.sparseness(**quantus_inp)[0]]).float()
-#     else:
-#         print("all zeros saliency map")
-#         return torch.zeros([0])
+    )
+    if attr.sum() > 0:
+        X = X[:, : attr.shape[2], :]
+        X = X.unsqueeze(1)
+        quantus_inp = {
+            "model": None,
+            "x_batch": X.clone()
+            .detach()
+            .cpu()
+            .numpy(),  # quantus expects the batch dim
+            "a_batch": attr,
+            "y_batch": y.numpy(),
+            "softmax": False,
+            "device": device,
+        }
+        return torch.Tensor([sparseness(**quantus_inp)[0]]).float()
+    else:
+        print("all zeros saliency map")
+        return torch.zeros([0])
 
-# @torch.no_grad()
-# def compute_complexity(wavs, X, y):
-#     """Computes the COMP metric used in L-MAC paper"""
-#     self.complexity = quantus.Complexity(
-#         return_aggregate=True, abs=True
-#     )
-#     device = X.device
-#     attr = (
-#         self.interpret_computation_steps(wavs)#[1]
-#         .transpose(1, 2)
-#         .unsqueeze(1)
-#         .clone()
-#         .detach()
-#         .cpu()
-#         .numpy()
-#     )
-#     if attr.sum() > 0:
-#         X = X[:, : attr.shape[2], :]
-#         X = X.unsqueeze(1)
-#         quantus_inp = {
-#             "model": None,
-#             "x_batch": X.clone()
-#             .detach()
-#             .cpu()
-#             .numpy(),  # quantus expects the batch dim
-#             "a_batch": attr,
-#             "y_batch": y.squeeze(dim=1).clone().detach().cpu().numpy(),
-#             "softmax": False,
-#             "device": device,
-#         }
+@torch.no_grad()
+def compute_complexity(attr, X, y):
+    """Computes the COMP metric used in L-MAC paper"""
+    complexity = quantus.Complexity(
+        return_aggregate=True, abs=True
+    )
+    device = X.device
+    attr = (
+        attr.unsqueeze(1)
+        .clone()
+        .detach()
+        .cpu()
+        .numpy()
+    )
+    if attr.sum() > 0:
+        X = X[:, : attr.shape[2], :]
+        X = X.unsqueeze(1)
+        quantus_inp = {
+            "model": None,
+            "x_batch": X.clone()
+            .detach()
+            .cpu()
+            .numpy(),  # quantus expects the batch dim
+            "a_batch": attr,
+            "y_batch": y.numpy(),
+            "softmax": False,
+            "device": device,
+        }
 
-#         return torch.Tensor([self.complexity(**quantus_inp)[0]]).float()
-#     else:
-#         print("all zeros saliency map")
-#         return torch.zeros([0])
+        return torch.Tensor([complexity(**quantus_inp)[0]]).float()
+    else:
+        print("all zeros saliency map")
+        return torch.zeros([0])
 
 
 @torch.no_grad()
@@ -221,7 +219,7 @@ def accuracy_value(predict, target):
 
 
 def compute_interpretability_metrics(
-    predictions, predictions_masked, theta_out, reference
+    predictions, predictions_masked, theta_out, reference, attributions, originals
 ):
     """
     Compute interpretability metrics.
@@ -235,6 +233,9 @@ def compute_interpretability_metrics(
         "faithfulness": compute_faithfulness(predictions, predictions_masked)
         .mean()
         .item(),
+        "sparseness": compute_sparseness(attributions, originals, reference).mean().item(),
+        "complexity": compute_complexity(attributions, originals, reference).mean().item()
+
     }
 
 
@@ -253,6 +254,8 @@ def eval_one_epoch(
     predictions_masked_list = []
     theta_list = []
     outputs_list = []
+    attributions = []
+    originals = []
 
 
     tf = InvertibleTF()
@@ -280,6 +283,9 @@ def eval_one_epoch(
                     additional_forward_args=(phase),
                     **adds_params[strategy],
                 )
+
+            attributions.extend(attr.cpu())
+            originals.extend(batch["input_values"].cpu())
 
             predictions_masked = model(
                 batch["input_values"], mask=1 - attr, phase=phase
@@ -327,6 +333,8 @@ def eval_one_epoch(
     predictions_masked_tensor = torch.stack(predictions_masked_list)
     theta_tensor = torch.stack(theta_list)
     outputs_tensor = torch.stack(outputs_list)
+    attributions_tensor = torch.stack(attributions)
+    originals_tensor = torch.stack(originals)
 
     return (
         eval_loss / len(eval_dataloader),
@@ -338,6 +346,8 @@ def eval_one_epoch(
         predictions_masked_tensor,
         theta_tensor,
         outputs_tensor,
+        attributions_tensor,
+        originals_tensor
     )
 
 
@@ -409,11 +419,13 @@ def main(config):
             "roc_auc",
             "sensitivity",
             "specificity",
-            "AD",
             "AI",
+            "AD",
             "AG",
             "inp_fid",
             "faithfulness",
+            "sparseness",
+            "complexity"
         ]
     }
 
@@ -460,7 +472,9 @@ def main(config):
             original,
             predictions_masked,
             theta,
-            outputs
+            outputs, 
+            attributions,
+            originals
         ) = eval_one_epoch(
             model=model,
             eval_dataloader=test_dl,
@@ -478,12 +492,15 @@ def main(config):
             is_binary_classification=is_binary_classification,
         )
 
+        test_reference = torch.tensor(np.stack(test_reference))
         # Compure interpretability metrics
         interpretability_metrics = compute_interpretability_metrics(
             predictions=outputs,
             predictions_masked=predictions_masked,
             theta_out=theta,
             reference=test_reference,
+            attributions=attributions, 
+            originals=originals
         )
 
         # Print metrics
@@ -505,7 +522,7 @@ def main(config):
     # Print overall metrics
     print("\nOverall Metrics:")
     for k, v in overall_metrics.items():
-        if k in {"AD", "AI", "AG", "inp_fid", "faithfulness"}:
+        if k in {"AD", "AI", "AG", "inp_fid", "faithfulness", "sparseness", "complexity"}:
             mean_value = np.mean(v)
             std_value = np.std(v)
             print(f"{k}: Mean = {mean_value:.3f}, Std = {std_value:.3f}")
