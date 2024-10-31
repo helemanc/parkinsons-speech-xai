@@ -505,10 +505,14 @@ def main(config):
     # Print overall metrics
     print("\nOverall Metrics:")
     for k, v in overall_metrics.items():
-        if k == "AD" or k == "AI" or k == "AG" or k == "inp_fid" or k == "faithfulness":
-            print(f"{k}: {np.mean(v):.3f}")
-        else: 
-            print(f"{k}: {np.mean(v)*100:.3f}")
+        if k in {"AD", "AI", "AG", "inp_fid", "faithfulness"}:
+            mean_value = np.mean(v)
+            std_value = np.std(v)
+            print(f"{k}: Mean = {mean_value:.3f}, Std = {std_value:.3f}")
+        else:
+            mean_value = np.mean(v) * 100
+            std_value = np.std(v) * 100
+            print(f"{k}: Mean = {mean_value:.3f}%, Std = {std_value:.3f}%")
 
 
 if __name__ == "__main__":

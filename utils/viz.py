@@ -73,20 +73,23 @@ def plot_spectrograms_with_mask(plot_dir, original, attr, target=None, predictio
     mask_normalized = np.transpose(mask_normalized)
     saliency_map = np.transpose(saliency_map)
 
+    hop_length_samples = 185
+    win_length_samples = 371
+
     fig, axs = plt.subplots(1, 3, figsize=(15, 5))
 
     # Plot the original spectrogram with a linear y-axis
-    img1 = librosa.display.specshow(original, sr=sample_rate,  hop_length=11.6099, win_length=23.2199,  x_axis="time", y_axis="linear", ax=axs[0], cmap="plasma")
+    img1 = librosa.display.specshow(original, sr=sample_rate,  n_fft=1024, hop_length=hop_length_samples, win_length=win_length_samples,  x_axis="time", y_axis="linear", ax=axs[0], cmap="plasma")
     axs[0].set_title("Original Spectrogram (Linear Scale)")
     plt.colorbar(img1, ax=axs[0])
 
     # Plot the normalized mask with a linear y-axis
-    img2 = librosa.display.specshow(mask_normalized, sr=sample_rate, hop_length=11.6099, win_length=23.2199,  x_axis="time", y_axis="linear", ax=axs[1], cmap="plasma")
+    img2 = librosa.display.specshow(mask_normalized, sr=sample_rate,  n_fft=1024, hop_length=hop_length_samples, win_length=win_length_samples,  x_axis="time", y_axis="linear", ax=axs[1], cmap="plasma")
     axs[1].set_title("Normalized Mask (Linear Scale)")
     plt.colorbar(img2, ax=axs[1])
 
     # Plot the saliency map with a linear y-axis
-    img3 = librosa.display.specshow(saliency_map, sr=sample_rate,  hop_length=11.6099, win_length=23.2199,  x_axis="time", y_axis="linear", ax=axs[2], cmap="plasma")
+    img3 = librosa.display.specshow(saliency_map, sr=sample_rate,   n_fft=1024, hop_length=hop_length_samples, win_length=win_length_samples,  x_axis="time", y_axis="linear", ax=axs[2], cmap="plasma")
     axs[2].set_title("Saliency Map (Linear Scale)")
     plt.colorbar(img3, ax=axs[2])
 
@@ -102,17 +105,17 @@ def plot_spectrograms_with_mask(plot_dir, original, attr, target=None, predictio
     fig, axs_log = plt.subplots(1, 3, figsize=(15, 5))
 
     # Plot the original spectrogram with a log y-axis
-    img1 = librosa.display.specshow(original, sr=sample_rate, hop_length=11.6099, win_length=23.2199,  x_axis="time", y_axis="log", ax=axs_log[0], cmap="plasma")
+    img1 = librosa.display.specshow(original, sr=sample_rate,  n_fft=1024, hop_length=hop_length_samples, win_length=win_length_samples,  x_axis="time", y_axis="log", ax=axs_log[0], cmap="plasma")
     axs_log[0].set_title("Original Spectrogram (Log Scale)")
     plt.colorbar(img1, ax=axs_log[0])
 
     # Plot the normalized mask with a log y-axis
-    img2 = librosa.display.specshow(mask_normalized, sr=sample_rate,  hop_length=11.6099, win_length=23.2199,  x_axis="time", y_axis="log", ax=axs_log[1], cmap="plasma")
+    img2 = librosa.display.specshow(mask_normalized, sr=sample_rate,   n_fft=1024, hop_length=hop_length_samples, win_length=win_length_samples,  x_axis="time", y_axis="log", ax=axs_log[1], cmap="plasma")
     axs_log[1].set_title("Normalized Mask (Log Scale)")
     plt.colorbar(img2, ax=axs_log[1])
 
     # Plot the saliency map with a log y-axis
-    img3 = librosa.display.specshow(saliency_map, sr=sample_rate,  hop_length=11.6099, win_length=23.2199,  x_axis="time", y_axis="log", ax=axs_log[2], cmap="plasma")
+    img3 = librosa.display.specshow(saliency_map, sr=sample_rate,  n_fft=1024,  hop_length=hop_length_samples, win_length=win_length_samples,  x_axis="time", y_axis="log", ax=axs_log[2], cmap="plasma")
     axs_log[2].set_title("Saliency Map (Log Scale)")
     plt.colorbar(img3, ax=axs_log[2])
 
