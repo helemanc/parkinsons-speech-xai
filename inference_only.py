@@ -359,6 +359,7 @@ def get_dataloaders(test_path, class_mapping, config):
     test_paths = df_test.audio_path.values.tolist()
     test_labels = df_test[config.training.label_key].values.tolist()
 
+
     test_ds = AudioClassificationDataset(
         audio_paths=test_paths,
         labels=test_labels,
@@ -399,6 +400,14 @@ def main(config):
     )
     print(f"Using device: {device}")
 
+    # Pretrained model
+    pretrained_model = config.model.model_name_or_path
+
+    if "wavlm" in pretrained_model:
+        pretrained_model = "wavlm"
+    elif "hubert" in pretrained_model:
+        pretrained_model = "hubert"
+
     # Create class mapping
     if config.training.label_key == "status":
         class_mapping = {"hc": 0, "pd": 1}
@@ -429,17 +438,7 @@ def main(config):
         ]
     }
 
-    # Create interptretations dir 
-    # Define the base directory for interpretations
-    base_dir = "results"
-
-    # Ensure the base directory exists
-    if not os.path.exists(base_dir):
-        os.makedirs(base_dir)
-    
-    int_dir = os.path.join(base_dir, strategy)
-    if not os.path.exists(int_dir):
-        os.makedirs(int_dir)
+  
 
     for test_fold in range(1, 11):
         # Load fold model
@@ -462,31 +461,39 @@ def main(config):
         # if not os.path.exists(fold_dir):
         #     os.makedirs(fold_dir)
     
+        # Create interptretations dir 
+        # Define the base directory for interpretations
+        base_dir = "results"
+
+        # Ensure the base directory exists
+        if not os.path.exists(base_dir):
+            os.makedirs(base_dir)
+        
+        model_dir = os.path.join(base_dir, pretrained_model)
+        if not os.path.exists(model_dir):
+            os.makedirs(model_dir)
+        
+        int_dir = os.path.join(model_dir, strategy)
+        if not os.path.exists(int_dir):
+            os.makedirs(int_dir)
+            
         # Save attributions 
         attributions_dir = os.path.join(int_dir, "attributions")
         if not os.path.exists(attributions_dir):
             os.makedirs(attributions_dir)
-        
-        strategy_dir_attr = os.path.join(attributions_dir, strategy)
-        if not os.path.exists(strategy_dir_attr):
-            os.makedirs(strategy_dir_attr)
-
-
-        attributions_dir = os.path.join(strategy_dir_attr, f"fold_{test_fold}")
-        if not os.path.exists(attributions_dir):
-            os.makedirs(attributions_dir) 
+    
+        attributions_fold_dir = os.path.join(attributions_dir, f"fold_{test_fold}")
+        if not os.path.exists(attributions_fold_dir):
+            os.makedirs(attributions_fold_dir) 
 
         visualizations_dir = os.path.join(int_dir, "interpretations")
         if not os.path.exists(visualizations_dir):
             os.makedirs(visualizations_dir)
         
-        strategy_dir_viz = os.path.join(visualizations_dir, strategy)
-        if not os.path.exists(strategy_dir_viz):
-            os.makedirs(strategy_dir_viz)
-        
-        visualizations_dir = os.path.join(strategy_dir_viz, f"fold_{test_fold}")
-        if not os.path.exists(visualizations_dir):
-            os.makedirs(visualizations_dir)
+       
+        visualizations_fold_dir = os.path.join(visualizations_dir, f"fold_{test_fold}")
+        if not os.path.exists(visualizations_fold_dir):
+            os.makedirs(visualizations_fold_dir)
 
         # Evaluate
         (
@@ -506,13 +513,19 @@ def main(config):
             eval_dataloader=test_dl,
             device=device,
             loss_fn=loss_fn,
-            fold_dir = visualizations_dir,
+            fold_dir = visualizations_fold_dir,
             is_binary_classification=is_binary_classification,
         )
 
         
         # Save attributions
-        torch.save(attributions, os.path.join(attributions_dir,  "attributions.pt"))
+        torch.save(attributions, os.path.join(attributions_fold_dir,  "attributions.pt"))
+
+        # Save gold labels
+        torch.save(test_reference, os.path.join(attributions_fold_dir, "gold_labels.pt"))
+
+        # Save originals 
+        torch.save(originals, os.path.join(attributions_fold_dir, "originals.pt"))
 
         # Compute metrics
         metrics = compute_metrics(
