@@ -30,13 +30,26 @@ from utils import viz
 
 import quantus 
 
+import json
+
 
 eps = 1e-10
 
-int_strategies = {"saliency": Saliency, "ig": IntegratedGradients, "gbp": GuidedBackprop}
-adds_params = {"saliency": {}, "ig": {"n_steps": 5}, "gbp": {}} 
+int_strategies = {"saliency": Saliency, "gbp": GuidedBackprop} #"ig": IntegratedGradients,}
+adds_params = {"saliency": {},  "gbp": {},} # "ig": {"n_steps": 5},} 
 
 strategy = "gbp"
+overlap = False 
+
+
+def compute_overlap_attribution(attribution1, attribution2): 
+    # Ensure both attributions are of the same shape
+    assert attribution1.shape == attribution2.shape, "Attributions must have the same shape"
+    
+    # Calculate the overlap attribution
+    overlap_attribution = (attribution1 * attribution2) / (attribution1 + attribution2 + 1e-10)
+
+    return overlap_attribution
 
 
 def compute_metrics(
@@ -239,57 +252,79 @@ def compute_interpretability_metrics(
     }
 
 
-def eval_one_epoch(
-    model, eval_dataloader, device, loss_fn, fold_dir, is_binary_classification=False
+
+def eval_one_epoch_combined(
+    model, dataloader, device, loss_fn, fold_dir, strategy=None, overlap_name=None, is_binary_classification=False
 ):
     model.eval()
-    if strategy == "ig":
+
+    if (strategy == "ig") or (overlap_name and "ig" in overlap_name):
         model = model.double()
 
-    p_bar = tqdm(eval_dataloader, total=len(eval_dataloader), ncols=100)
+    p_bar = tqdm(dataloader, total=len(dataloader), ncols=100)
     eval_loss = 0.0
-    reference = []
-    predictions = []
-    speakers = []
-    predictions_masked_list = []
-    theta_list = []
-    outputs_list = []
-    attributions = []
-    originals = []
-
+    reference, predictions, speakers = [], [], []
+    predictions_masked_list, theta_list, outputs_list = [], [], []
+    attributions, originals, phases = [], [], []
 
     tf = InvertibleTF()
-    saliency = int_strategies[strategy](model)
+
+    # Set strategy name and initialize saliency if using `eval` strategy
+    if strategy:
+        saliency = int_strategies[strategy](model)
+        eval_mode = True
+    else:
+        strategy = overlap_name
+        eval_mode = False
 
     with torch.no_grad():
-        # with torch.enable_grad():
         for batch in p_bar:
-            # Move tensors to the appropriate device
-            batch = {
-                k: (v.to(device) if isinstance(v, torch.Tensor) else v)
-                for k, v in batch.items()
-            }
-            labels = batch["labels"]
-            batch["input_values"], phase = tf(batch["input_values"])
-            if strategy == "ig":
+            # Process the batch according to overlap/eval mode
+            if eval_mode:
+                # Standard evaluation mode
+                batch = {k: (v.to(device) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}
+                labels = batch["labels"]
+                batch["input_values"], phase = tf(batch["input_values"])
+                
+            else:
+                # Overlap mode
+                overlap_attributions, input_values, labels, phases = batch
+                batch_dict = {
+                    'overlap_attributions': overlap_attributions,
+                    'input_values': input_values,
+                    'labels': labels, 
+                    'phases': phases
+                }
+                batch = {k: (v.to(device) if isinstance(v, torch.Tensor) else v) for k, v in batch_dict.items()}
+                labels = batch["labels"]
+                phase = batch["phases"]
+                attr = batch["overlap_attributions"]
+
+            # Double tensor for "ig" strategy
+            if "ig" in strategy:
                 batch["input_values"] = batch["input_values"].double()
                 phase = phase.double()
 
+            # Forward pass
             outputs = model(batch["input_values"], phase=phase)
-            with torch.enable_grad():
-                attr = saliency.attribute(
-                    batch["input_values"],
-                    # target=labels.to(torch.long),
-                    additional_forward_args=(phase),
-                    **adds_params[strategy],
-                )
+
+            # Attribution handling
+            if eval_mode:
+                with torch.enable_grad():
+                    attr = saliency.attribute(
+                        batch["input_values"],
+                        additional_forward_args=(phase),
+                        **adds_params[strategy],
+                    )
 
             attributions.extend(attr.cpu())
             originals.extend(batch["input_values"].cpu())
-
-            predictions_masked = model(
-                batch["input_values"], mask=1 - attr, phase=phase
-            )  # mask_out
+            
+            if eval_mode:
+                phases.extend(phase.cpu())
+        
+            # Masked predictions
+            predictions_masked = model(batch["input_values"], mask=1 - attr, phase=phase)  # mask_out
             theta = model(batch["input_values"], mask=attr, phase=phase)  # mask_in
 
             predictions_masked_list.extend(predictions_masked.cpu())
@@ -298,15 +333,8 @@ def eval_one_epoch(
 
             print(attr.shape)
 
-            # original and attributions
-            original = batch["input_values"].squeeze().cpu().numpy()
-            attr = attr.squeeze().cpu().numpy()
-
-    
-            # breakpoint()
+            # Loss calculation
             n_classes = outputs.shape[-1]
-
-            # Calculate loss
             if is_binary_classification:
                 loss = loss_fn(outputs.squeeze(-1), labels)
             else:
@@ -319,17 +347,14 @@ def eval_one_epoch(
             if is_binary_classification:
                 predictions.extend((outputs > 0.5).cpu().numpy().astype(int))
             else:
-                predictions.extend(
-                    torch.argmax(outputs, dim=-1).cpu().numpy().astype(int)
-                )
+                predictions.extend(torch.argmax(outputs, dim=-1).cpu().numpy().astype(int))
 
-            
+            # Visualization
+            original = batch["input_values"].squeeze().cpu().numpy()
+            attr = attr.squeeze().cpu().numpy()
             viz.save_interpretations_for_conditions(fold_dir, original, attr, phase, labels, predictions, tf, sample_rate=16000)
 
             p_bar.set_postfix({"loss": loss.item()})
-
-    # predictions_masked = np.array(predictions_masked_list.cpu())
-    # theta = np.array(theta_list.cpu())
 
     predictions_masked_tensor = torch.stack(predictions_masked_list)
     theta_tensor = torch.stack(theta_list)
@@ -338,17 +363,16 @@ def eval_one_epoch(
     originals_tensor = torch.stack(originals)
 
     return (
-        eval_loss / len(eval_dataloader),
+        eval_loss / len(dataloader),
         reference,
         predictions,
         speakers,
-        #attr,
-        #original,
         predictions_masked_tensor,
         theta_tensor,
         outputs_tensor,
         attributions_tensor,
-        originals_tensor
+        originals_tensor,
+        torch.stack(phases) if eval_mode else None
     )
 
 
@@ -391,6 +415,222 @@ def get_speaker_disease_grade(test_path):
     df_test = pd.read_csv(test_path)
     df_test["UPDRS-speech"].replace(np.nan, -1, inplace=True)
     return dict(zip(df_test.speaker_id, df_test["UPDRS-speech"]))
+
+
+# Helper Functions
+def create_directory(path):
+    """Create a directory if it doesn't exist."""
+    if not os.path.exists(path):
+        os.makedirs(path)
+    return path
+
+def load_model(test_fold, config, device, class_mapping):
+    """Load the model for a specific fold."""
+    config.model.num_classes = len(class_mapping)
+    model = SSLClassificationModel(config=config)
+    fold_path = f"{config.training.checkpoint_path}fold_{test_fold}.pt"
+    model.load_state_dict(torch.load(fold_path, map_location=device, weights_only=False))
+    return model.to(device)
+
+def save_tensor(tensor, path):
+    """Save a tensor to a file."""
+    torch.save(tensor, path)
+
+def save_metrics(overall_metrics, output_folder):
+    """Save overall and average metrics to JSON files."""
+    with open(f"{output_folder}/overall_metrics.json", "w") as f:
+        json.dump(overall_metrics, f, indent=4)
+    
+    # Calculate average metrics
+    average_metrics = {
+        k: {
+            "mean": np.mean(v) * (100 if k not in {"AD", "AI", "AG", "inp_fid", "faithfulness", "sparseness", "complexity"} else 1),
+            "std": np.std(v) * (100 if k not in {"AD", "AI", "AG", "inp_fid", "faithfulness", "sparseness", "complexity"} else 1)
+        }
+        for k, v in overall_metrics.items()
+    }
+
+    with open(f"{output_folder}/average_metrics.json", "w") as f:
+        json.dump(average_metrics, f, indent=4)
+
+def compute_attributions(pretrained_model, strategy, config, device, loss_fn, class_mapping, overall_metrics, is_binary_classification):
+    """Compute attributions and save metrics for a single fold."""
+
+    for test_fold in range(1, 11):
+        model = load_model(test_fold, config, device, class_mapping)
+        test_path = f"{config.data.fold_root_path}/TRAIN_TEST_{test_fold}/test.csv"
+        test_dl = get_dataloaders(test_path, class_mapping, config)
+        
+        # Create directories for results and interpretations
+        base_dir = create_directory("results")
+        model_dir = create_directory(os.path.join(base_dir, pretrained_model))
+        int_dir = create_directory(os.path.join(model_dir, strategy))
+        attributions_fold_dir = create_directory(os.path.join(int_dir, "attributions", f"fold_{test_fold}"))
+        visualizations_fold_dir = create_directory(os.path.join(int_dir, "interpretations", f"fold_{test_fold}"))
+
+        # Evaluate model and compute metrics
+        (
+            _, test_reference, test_predictions, _,
+            predictions_masked, theta, outputs, attributions, originals, phases
+        ) = eval_one_epoch_combined(
+            model=model,
+            dataloader=test_dl,
+            device=device,
+            loss_fn=loss_fn,
+            fold_dir=visualizations_fold_dir,
+            is_binary_classification=is_binary_classification,
+            strategy=strategy
+        )
+
+        # Save attributions and results
+        save_tensor(attributions, os.path.join(attributions_fold_dir, "attributions.pt"))
+        save_tensor(torch.stack([torch.tensor(arr) for arr in test_reference]), os.path.join(attributions_fold_dir, "gold_labels.pt"))
+        save_tensor(originals, os.path.join(attributions_fold_dir, "originals.pt"))
+        save_tensor(phases, os.path.join(attributions_fold_dir, "phases.pt"))
+
+        # Compute and accumulate metrics
+        metrics = compute_metrics(test_reference, 
+                                test_predictions, 
+                                verbose=False, 
+                                is_binary_classification=is_binary_classification)
+        interpretability_metrics = compute_interpretability_metrics(
+            predictions=outputs, 
+            predictions_masked=predictions_masked, 
+            theta_out=theta,
+            reference=test_reference, 
+            attributions=attributions, 
+            originals=originals
+        )
+
+        for k, v in {**metrics, **interpretability_metrics}.items():
+            overall_metrics[k].append(v)
+
+        # Print metrics
+        print(f"-" * 20, f"Fold {test_fold} Results", "-" * 20)
+        for k, v in metrics.items():
+            print(f"{k}: {v}")
+
+        print(f"-" * 20, f"Fold {test_fold} Interpretability Metrics", "-" * 20)
+        for k, v in interpretability_metrics.items():
+            print(f"{k}: {v}")
+
+        # Clear model from memory
+        del model
+        torch.cuda.empty_cache()
+
+    # save the average metrics to a json file
+    average_metrics = {}
+    for k, v in overall_metrics.items():
+        if k in {"AD", "AI", "AG", "inp_fid", "faithfulness", "sparseness", "complexity"}:
+            mean_value = np.mean(v)
+            std_value = np.std(v)
+            average_metrics[k] = {"mean": mean_value, "std": std_value}
+        else:
+            mean_value = np.mean(v) * 100
+            std_value = np.std(v) * 100
+            average_metrics[k] = {"mean": mean_value, "std": std_value}
+    
+    save_metrics(overall_metrics, int_dir)
+
+def compute_overlap_attributions(pretrained_model, device, loss_fn, class_mapping, int_strategies, overall_metrics, is_binary_classification):
+    """Compute overlap attributions between strategies and save metrics."""
+    base_dir = "results"
+    model_dir = create_directory(os.path.join(base_dir, pretrained_model))  
+    overlap_dir = create_directory(os.path.join(model_dir, "overlap"))
+
+    for i, strategy1 in enumerate(int_strategies.keys()):
+        for j, strategy2 in enumerate(int_strategies.keys()):
+            if i < j:
+                output_folder = create_directory(os.path.join(overlap_dir, f"{strategy1}_{strategy2}"))
+                for test_fold in range(1, 11):
+                    model = load_model(test_fold, config, device, class_mapping)
+                    
+                    # Load attributions and labels
+                    folder1, folder2 = os.path.join(model_dir, strategy1), os.path.join(model_dir, strategy2)
+                    attribution1 = torch.load(os.path.join(folder1, "attributions", f"fold_{test_fold}", 'attributions.pt'))
+                    attribution2 = torch.load(os.path.join(folder2, "attributions", f"fold_{test_fold}", 'attributions.pt'))
+                    labels1 = torch.load(os.path.join(folder1, "attributions", f"fold_{test_fold}", 'gold_labels.pt'))
+                    labels2 = torch.load(os.path.join(folder2, "attributions", f"fold_{test_fold}", 'gold_labels.pt'))
+                    originals1 = torch.load(os.path.join(folder1, "attributions", f"fold_{test_fold}", 'originals.pt'))
+                    originals2 = torch.load(os.path.join(folder2, "attributions", f"fold_{test_fold}", 'originals.pt'))
+                    phases1 = torch.load(os.path.join(folder1,  "attributions", f"fold_{test_fold}", 'phases.pt'))
+                    phases2 = torch.load(os.path.join(folder2,  "attributions", f"fold_{test_fold}", 'phases.pt'))
+                    assert torch.equal(labels1, labels2), "Labels must match"
+                    assert torch.equal(originals1, originals2), "Originals must match"
+                    assert torch.equal(phases1, phases2), "Phases must match"
+
+                    # Compute overlap
+                    overlaps = compute_overlap_attribution(attribution1, attribution2)
+                    dataloader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(overlaps, originals1, labels1, phases1), batch_size=config.training.batch_size, shuffle=False)
+
+                    attributions_dir = create_directory(os.path.join(output_folder, "attributions"))
+                    attributions_fold_dir = create_directory(os.path.join(attributions_dir, f"fold_{test_fold}"))
+                    torch.save(overlaps, os.path.join(attributions_fold_dir, "attributions.pt"))
+                    # Evaluate on overlap data
+                    visualizations_fold_dir = create_directory(os.path.join(output_folder, "interpretations", f"fold_{test_fold}"))
+
+                    (
+                        _,
+                        test_reference,
+                        test_predictions,
+                        _,
+                        predictions_masked,
+                        theta,
+                        outputs, 
+                        attributions,
+                        originals,
+                        _
+                    ) = eval_one_epoch_combined(
+                        model=model,
+                        overlap_name=f"{strategy1}_{strategy2}",
+                        dataloader=dataloader,
+                        device=device,
+                        loss_fn=loss_fn,
+                        fold_dir=visualizations_fold_dir,
+                        is_binary_classification=is_binary_classification
+                    )
+
+                    # Compute metrics
+                    metrics = compute_metrics(
+                        test_reference,
+                        test_predictions,
+                        verbose=False,
+                        is_binary_classification=is_binary_classification,
+                    )
+
+                    test_reference_tensor = torch.stack([torch.tensor(arr) for arr in test_reference])
+                    # Compute interpretability metrics
+                    interpretability_metrics = compute_interpretability_metrics(
+                        predictions=outputs,
+                        predictions_masked=predictions_masked,
+                        theta_out=theta,
+                        reference=test_reference_tensor,
+                        attributions=attributions, 
+                        originals=originals
+                    )
+
+                    # Print metrics
+                    print(f"-" * 20, f"Fold {test_fold} Results", "-" * 20)
+                    for k, v in metrics.items():
+                        print(f"{k}: {v}")
+                        overall_metrics[k].append(v)
+
+                    # Print interpretability metrics
+                    print(f"-" * 20, f"Fold {test_fold} Interpretability Metrics", "-" * 20)
+                    for k, v in interpretability_metrics.items():
+                        print(f"{k}: {v}")
+                        overall_metrics[k].append(v)
+
+                    # Clear model from memory
+                    del model
+                    torch.cuda.empty_cache()
+
+                # Save all metrics
+                save_metrics(overall_metrics, output_folder)
+
+# Main Processing Function
+
+
 
 
 def main(config):
@@ -439,140 +679,11 @@ def main(config):
     }
 
   
-
-    for test_fold in range(1, 11):
-        # Load fold model
-        config.model.num_classes = len(class_mapping)
-
-        model = SSLClassificationModel(config=config)
-        fold_path = f"{config.training.checkpoint_path}fold_{test_fold}.pt"
-        model.load_state_dict(
-            torch.load(fold_path, map_location="cpu", weights_only=False)
-        )
-        model.to(device)
-
-        # Create dataloader
-        test_path = f"{config.data.fold_root_path}/TRAIN_TEST_{test_fold}/test.csv"
-        test_dl = get_dataloaders(test_path, class_mapping, config)
-
-
-        # # Create fold_dir if it does not exist
-        # fold_dir = os.path.join(int_dir, f"fold_{test_fold}")
-        # if not os.path.exists(fold_dir):
-        #     os.makedirs(fold_dir)
+    if not overlap: 
+        compute_attributions(pretrained_model, strategy, config, device, loss_fn, class_mapping, overall_metrics, is_binary_classification)
+    else:
+        compute_overlap_attributions(pretrained_model, device, loss_fn, class_mapping, int_strategies, overall_metrics, is_binary_classification)
     
-        # Create interptretations dir 
-        # Define the base directory for interpretations
-        base_dir = "results"
-
-        # Ensure the base directory exists
-        if not os.path.exists(base_dir):
-            os.makedirs(base_dir)
-        
-        model_dir = os.path.join(base_dir, pretrained_model)
-        if not os.path.exists(model_dir):
-            os.makedirs(model_dir)
-        
-        int_dir = os.path.join(model_dir, strategy)
-        if not os.path.exists(int_dir):
-            os.makedirs(int_dir)
-            
-        # Save attributions 
-        attributions_dir = os.path.join(int_dir, "attributions")
-        if not os.path.exists(attributions_dir):
-            os.makedirs(attributions_dir)
-    
-        attributions_fold_dir = os.path.join(attributions_dir, f"fold_{test_fold}")
-        if not os.path.exists(attributions_fold_dir):
-            os.makedirs(attributions_fold_dir) 
-
-        visualizations_dir = os.path.join(int_dir, "interpretations")
-        if not os.path.exists(visualizations_dir):
-            os.makedirs(visualizations_dir)
-        
-       
-        visualizations_fold_dir = os.path.join(visualizations_dir, f"fold_{test_fold}")
-        if not os.path.exists(visualizations_fold_dir):
-            os.makedirs(visualizations_fold_dir)
-
-        # Evaluate
-        (
-            test_loss,
-            test_reference,
-            test_predictions,
-            test_speaker,
-            #attr,
-            #original,
-            predictions_masked,
-            theta,
-            outputs, 
-            attributions,
-            originals
-        ) = eval_one_epoch(
-            model=model,
-            eval_dataloader=test_dl,
-            device=device,
-            loss_fn=loss_fn,
-            fold_dir = visualizations_fold_dir,
-            is_binary_classification=is_binary_classification,
-        )
-
-        
-        # Save attributions
-        torch.save(attributions, os.path.join(attributions_fold_dir,  "attributions.pt"))
-
-        # Save gold labels
-        torch.save(test_reference, os.path.join(attributions_fold_dir, "gold_labels.pt"))
-
-        # Save originals 
-        torch.save(originals, os.path.join(attributions_fold_dir, "originals.pt"))
-
-        # Compute metrics
-        metrics = compute_metrics(
-            test_reference,
-            test_predictions,
-            verbose=False,
-            is_binary_classification=is_binary_classification,
-        )
-
-        test_reference = torch.tensor(np.stack(test_reference))
-        # Compure interpretability metrics
-        interpretability_metrics = compute_interpretability_metrics(
-            predictions=outputs,
-            predictions_masked=predictions_masked,
-            theta_out=theta,
-            reference=test_reference,
-            attributions=attributions, 
-            originals=originals
-        )
-
-        # Print metrics
-        print(f"-" * 20, f"Fold {test_fold} Results", "-" * 20)
-        for k, v in metrics.items():
-            print(f"{k}: {v}")
-            overall_metrics[k].append(v)
-
-        # Print interpretability metrics
-        print(f"-" * 20, f"Fold {test_fold} Interpretability Metrics", "-" * 20)
-        for k, v in interpretability_metrics.items():
-            print(f"{k}: {v}")
-            overall_metrics[k].append(v)
-
-        # clear memory
-        del model
-        torch.cuda.empty_cache()
-
-    # Print overall metrics
-    print("\nOverall Metrics:")
-    for k, v in overall_metrics.items():
-        if k in {"AD", "AI", "AG", "inp_fid", "faithfulness", "sparseness", "complexity"}:
-            mean_value = np.mean(v)
-            std_value = np.std(v)
-            print(f"{k}: Mean = {mean_value:.3f}, Std = {std_value:.3f}")
-        else:
-            mean_value = np.mean(v) * 100
-            std_value = np.std(v) * 100
-            print(f"{k}: Mean = {mean_value:.3f}%, Std = {std_value:.3f}%")
 
 
 if __name__ == "__main__":
