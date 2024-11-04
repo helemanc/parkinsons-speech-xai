@@ -6,7 +6,7 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 from addict import Dict
-from captum.attr import IntegratedGradients, Saliency
+from captum.attr import IntegratedGradients, Saliency, NoiseTunnel, GuidedBackprop
 from captum.attr import visualization as viz
 from sklearn.metrics import (accuracy_score, confusion_matrix,
                              precision_recall_fscore_support, roc_auc_score)
@@ -33,10 +33,10 @@ import quantus
 
 eps = 1e-10
 
-int_strategies = {"saliency": Saliency, "ig": IntegratedGradients}
-adds_params = {"saliency": {}, "ig": {"n_steps": 5}}
+int_strategies = {"saliency": Saliency, "ig": IntegratedGradients, "gbp": GuidedBackprop}
+adds_params = {"saliency": {}, "ig": {"n_steps": 5}, "gbp": {}} 
 
-strategy = "saliency"
+strategy = "gbp"
 
 
 def compute_metrics(
@@ -322,6 +322,7 @@ def eval_one_epoch(
                 predictions.extend(
                     torch.argmax(outputs, dim=-1).cpu().numpy().astype(int)
                 )
+
             
             viz.save_interpretations_for_conditions(fold_dir, original, attr, phase, labels, predictions, tf, sample_rate=16000)
 
@@ -341,8 +342,8 @@ def eval_one_epoch(
         reference,
         predictions,
         speakers,
-        attr,
-        original,
+        #attr,
+        #original,
         predictions_masked_tensor,
         theta_tensor,
         outputs_tensor,
@@ -392,7 +393,6 @@ def get_speaker_disease_grade(test_path):
 
 
 def main(config):
-    int_method = 'saliency'
     # Set device
     device = torch.device(
         "cuda" if torch.cuda.is_available() and config.training.use_cuda else "cpu"
@@ -431,13 +431,13 @@ def main(config):
 
     # Create interptretations dir 
     # Define the base directory for interpretations
-    base_dir = "interpretations"
+    base_dir = "results"
 
     # Ensure the base directory exists
     if not os.path.exists(base_dir):
         os.makedirs(base_dir)
     
-    int_dir = os.path.join(base_dir, int_method)
+    int_dir = os.path.join(base_dir, strategy)
     if not os.path.exists(int_dir):
         os.makedirs(int_dir)
 
@@ -457,10 +457,36 @@ def main(config):
         test_dl = get_dataloaders(test_path, class_mapping, config)
 
 
-        # Create fold_dir if it does not exist
-        fold_dir = os.path.join(int_dir, f"fold_{test_fold}")
-        if not os.path.exists(fold_dir):
-            os.makedirs(fold_dir)
+        # # Create fold_dir if it does not exist
+        # fold_dir = os.path.join(int_dir, f"fold_{test_fold}")
+        # if not os.path.exists(fold_dir):
+        #     os.makedirs(fold_dir)
+    
+        # Save attributions 
+        attributions_dir = os.path.join(int_dir, "attributions")
+        if not os.path.exists(attributions_dir):
+            os.makedirs(attributions_dir)
+        
+        strategy_dir_attr = os.path.join(attributions_dir, strategy)
+        if not os.path.exists(strategy_dir_attr):
+            os.makedirs(strategy_dir_attr)
+
+
+        attributions_dir = os.path.join(strategy_dir_attr, f"fold_{test_fold}")
+        if not os.path.exists(attributions_dir):
+            os.makedirs(attributions_dir) 
+
+        visualizations_dir = os.path.join(int_dir, "interpretations")
+        if not os.path.exists(visualizations_dir):
+            os.makedirs(visualizations_dir)
+        
+        strategy_dir_viz = os.path.join(visualizations_dir, strategy)
+        if not os.path.exists(strategy_dir_viz):
+            os.makedirs(strategy_dir_viz)
+        
+        visualizations_dir = os.path.join(strategy_dir_viz, f"fold_{test_fold}")
+        if not os.path.exists(visualizations_dir):
+            os.makedirs(visualizations_dir)
 
         # Evaluate
         (
@@ -468,8 +494,8 @@ def main(config):
             test_reference,
             test_predictions,
             test_speaker,
-            attr,
-            original,
+            #attr,
+            #original,
             predictions_masked,
             theta,
             outputs, 
@@ -480,9 +506,13 @@ def main(config):
             eval_dataloader=test_dl,
             device=device,
             loss_fn=loss_fn,
-            fold_dir = fold_dir,
+            fold_dir = visualizations_dir,
             is_binary_classification=is_binary_classification,
         )
+
+        
+        # Save attributions
+        torch.save(attributions, os.path.join(attributions_dir,  "attributions.pt"))
 
         # Compute metrics
         metrics = compute_metrics(
