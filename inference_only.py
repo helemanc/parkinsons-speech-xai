@@ -38,7 +38,7 @@ eps = 1e-10
 int_strategies = {"saliency": Saliency, "gbp": GuidedBackprop} #"ig": IntegratedGradients,}
 adds_params = {"saliency": {},  "gbp": {},} # "ig": {"n_steps": 5},} 
 
-strategy = "gbp"
+strategy = "saliency"
 overlap = False 
 
 
@@ -493,11 +493,12 @@ def compute_attributions(pretrained_model, strategy, config, device, loss_fn, cl
                                 test_predictions, 
                                 verbose=False, 
                                 is_binary_classification=is_binary_classification)
+        test_reference_tensor = torch.stack([torch.tensor(arr) for arr in test_reference])
         interpretability_metrics = compute_interpretability_metrics(
             predictions=outputs, 
             predictions_masked=predictions_masked, 
             theta_out=theta,
-            reference=test_reference, 
+            reference=test_reference_tensor, 
             attributions=attributions, 
             originals=originals
         )
