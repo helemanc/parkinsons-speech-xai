@@ -12,28 +12,19 @@ import torch
 import torch.nn.functional as F
 import torchaudio
 from addict import Dict
-from captum.attr import (
-    GradientShap,
-    GuidedBackprop,
-    GuidedGradCam,
-    IntegratedGradients,
-    NoiseTunnel,
-    Saliency,
-)
+from captum.attr import (GradientShap, GuidedBackprop, GuidedGradCam,
+                         IntegratedGradients, NoiseTunnel, Saliency)
 from captum.attr import visualization as viz
-from sklearn.metrics import (
-    accuracy_score,
-    confusion_matrix,
-    precision_recall_fscore_support,
-    roc_auc_score,
-)
+from sklearn.metrics import (accuracy_score, confusion_matrix,
+                             precision_recall_fscore_support, roc_auc_score)
 from speechbrain.processing.features import ISTFT, STFT
 from speechbrain.utils.metric_stats import MetricStats
 from tqdm import tqdm
 from yaml_config_override import add_arguments
 
 from datasets.audio_classification_dataset import AudioClassificationDataset
-from models.ssl_classification_model import InvertibleTF, SSLClassificationModel
+from models.ssl_classification_model import (InvertibleTF,
+                                             SSLClassificationModel)
 from utils import viz
 
 eps = 1e-10
@@ -297,6 +288,7 @@ def eval_one_epoch_combined(
                 )
         else:
             saliency = int_strategies[strategy](model)
+
         eval_mode = True
     else:
         strategy = overlap_name
@@ -352,6 +344,9 @@ def eval_one_epoch_combined(
                         additional_forward_args=(phase),
                         **adds_params[strategy],
                     )
+
+                attr = attr.abs().float()
+                attr = attr / attr.max()
 
             attributions.extend(attr.cpu())
             originals.extend(batch["input_values"].cpu())
