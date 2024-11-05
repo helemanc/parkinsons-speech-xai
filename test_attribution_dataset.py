@@ -18,9 +18,12 @@ def main(config):
     model_dir = os.path.join("results", pretrained_model)
 
     for test_fold in range(1, 11):
-        dataloader = attribution_dataset.get_dataloader_for_fold(test_fold, config, model_dir, strategy)
-        print(f"Fold {test_fold} - Number of samples: {len(dataloader.dataset)}")
+        train_dataloader, val_dataloader, test_dataloader = attribution_dataset.get_stratified_dataloaders_for_fold(test_fold, config, model_dir, strategy)
+        print(f"Fold {test_fold} - Number of samples: {len(train_dataloader.dataset)}")
+        print(f"Fold {test_fold} - Number of samples: {len(val_dataloader.dataset)}")
+        print(f"Fold {test_fold} - Number of samples: {len(test_dataloader.dataset)}")
 
+       
 if __name__ == "__main__":
     config = add_arguments()
     config = Dict(config)

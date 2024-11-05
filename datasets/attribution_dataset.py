@@ -4,6 +4,8 @@ import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from yaml_config_override import add_arguments
 from addict import Dict
+from torch.utils.data import Dataset, DataLoader, Subset
+from sklearn.model_selection import train_test_split
 
 class SpectrogramAttributionDataset(Dataset):
     def __init__(self, fold, model_dir, strategy):
@@ -14,9 +16,9 @@ class SpectrogramAttributionDataset(Dataset):
         folder = os.path.join(model_dir, strategy)
         
         # Load data for the specified fold
-        self.attribution = torch.load(os.path.join(folder, "attributions", f"fold_{fold}", "attributions.pt"))
-        self.labels = torch.load(os.path.join(folder, "attributions", f"fold_{fold}", "gold_labels.pt"))
-        self.originals = torch.load(os.path.join(folder, "attributions", f"fold_{fold}", "originals.pt"))
+        self.attribution = torch.load(os.path.join(folder, "attributions", f"fold_{fold}", "attributions.pt"), weights_only=False)
+        self.labels = torch.load(os.path.join(folder, "attributions", f"fold_{fold}", "gold_labels.pt"), weights_only=False)
+        self.originals = torch.load(os.path.join(folder, "attributions", f"fold_{fold}", "originals.pt"), weights_only=False)
 
     def __len__(self):
         return len(self.labels)
@@ -41,13 +43,69 @@ class SpectrogramAttributionDataset(Dataset):
         return original, attribution, saliency_map, label
 
 
-def get_dataloader_for_fold(fold, config, model_dir, strategy):
+def stratified_split(dataset, train_ratio=0.7, val_ratio=0.15):
     """
-    Returns DataLoader for a specific fold and strategy.
+    Performs a stratified split to balance classes in train, validation, and test sets.
+    
+    Parameters:
+        dataset: Dataset to split.
+        train_ratio: Proportion of the dataset to use for training.
+        val_ratio: Proportion of the dataset to use for validation.
+        
+    Returns:
+        train_indices: Indices for the training subset.
+        val_indices: Indices for the validation subset.
+        test_indices: Indices for the test subset.
+    """
+    labels = [dataset[i][3].item() for i in range(len(dataset))]  # Extract labels for stratification
+
+    # First split into train+val and test
+    train_val_indices, test_indices = train_test_split(
+        range(len(dataset)), test_size=1 - (train_ratio + val_ratio), stratify=labels, random_state=42
+    )
+
+    # Extract labels for the train+val split to further split it into train and val
+    train_val_labels = [labels[i] for i in train_val_indices]
+
+    # Split train+val into train and validation
+    train_indices, val_indices = train_test_split(
+        train_val_indices, test_size=val_ratio / (train_ratio + val_ratio), stratify=train_val_labels, random_state=42
+    )
+
+    return train_indices, val_indices, test_indices
+
+
+def get_stratified_dataloaders_for_fold(fold, config, model_dir, strategy):
+    """
+    Returns DataLoaders for train, validation, and test splits with stratified sampling.
+    
+    Parameters:
+        fold: The current fold number.
+        config: Configuration object containing batch size, etc.
+        model_dir: Directory where data is stored.
+        strategy: The attribution strategy being used.
+
+    Returns:
+        train_loader: DataLoader for the training subset.
+        val_loader: DataLoader for the validation subset.
+        test_loader: DataLoader for the test subset.
     """
     dataset = SpectrogramAttributionDataset(fold, model_dir, strategy)
-    dataloader = DataLoader(dataset, batch_size=config.training.batch_size, shuffle=False)
-    return dataloader
+    
+    # Perform stratified split
+    train_indices, val_indices, test_indices = stratified_split(dataset, train_ratio=0.7, val_ratio=0.15)
+
+    # Create subsets using the stratified indices
+    train_dataset = Subset(dataset, train_indices)
+    val_dataset = Subset(dataset, val_indices)
+    test_dataset = Subset(dataset, test_indices)
+
+    # Create DataLoaders for each split
+    train_loader = DataLoader(train_dataset, batch_size=config.training.batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=config.training.batch_size, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=config.training.batch_size, shuffle=False)
+
+    return train_loader, val_loader, test_loader
 
 # Example usage for all folds:
 
