@@ -15,6 +15,7 @@ from addict import Dict
 from captum.attr import (
     GradientShap,
     GuidedBackprop,
+    GuidedGradCam,
     IntegratedGradients,
     NoiseTunnel,
     Saliency,
@@ -43,6 +44,7 @@ int_strategies = {
     "ig": IntegratedGradients,
     "shap": GradientShap,
     "smoothgrad": NoiseTunnel,
+    "ggc": GuidedGradCam,
 }
 adds_params = {
     "saliency": {},
@@ -50,6 +52,7 @@ adds_params = {
     "ig": {"n_steps": 5},
     "shap": {},
     "smoothgrad": {"nt_type": "smoothgrad", "nt_samples": 10},
+    "ggc": {},
 }
 
 overlap = False
@@ -283,6 +286,15 @@ def eval_one_epoch_combined(
     if strategy:
         if strategy == "smoothgrad":
             saliency = int_strategies[strategy](Saliency(model))
+        elif strategy == "ggc":
+            if "hubert" in str(model.ssl_model.__class__):
+                saliency = int_strategies[strategy](
+                    model, model.ssl_model.encoder.layers[-1]
+                )
+            else:
+                raise NotImplementedError(
+                    "GradCAM not implemented for models other than HuBert."
+                )
         else:
             saliency = int_strategies[strategy](model)
         eval_mode = True
