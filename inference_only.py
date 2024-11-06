@@ -12,19 +12,28 @@ import torch
 import torch.nn.functional as F
 import torchaudio
 from addict import Dict
-from captum.attr import (GradientShap, GuidedBackprop, GuidedGradCam,
-                         IntegratedGradients, NoiseTunnel, Saliency)
+from captum.attr import (
+    GradientShap,
+    GuidedBackprop,
+    GuidedGradCam,
+    IntegratedGradients,
+    NoiseTunnel,
+    Saliency,
+)
 from captum.attr import visualization as viz
-from sklearn.metrics import (accuracy_score, confusion_matrix,
-                             precision_recall_fscore_support, roc_auc_score)
+from sklearn.metrics import (
+    accuracy_score,
+    confusion_matrix,
+    precision_recall_fscore_support,
+    roc_auc_score,
+)
 from speechbrain.processing.features import ISTFT, STFT
 from speechbrain.utils.metric_stats import MetricStats
 from tqdm import tqdm
 from yaml_config_override import add_arguments
 
 from datasets.audio_classification_dataset import AudioClassificationDataset
-from models.ssl_classification_model import (InvertibleTF,
-                                             SSLClassificationModel)
+from models.ssl_classification_model import InvertibleTF, SSLClassificationModel
 from utils import viz
 
 eps = 1e-10
@@ -112,7 +121,7 @@ def compute_fidelity(theta_out, predictions):
     k_top = (theta_out > 0.5).float()
 
     # 1 element for each sample in batch, is 0 if pred_cl is in top k
-    temp = (k_top - pred_cl.unsqueeze(1) == 0).sum(1)
+    temp = ((k_top - pred_cl.unsqueeze(1)) == 0).sum(1)
 
     return temp
 
@@ -121,10 +130,10 @@ def compute_fidelity(theta_out, predictions):
 def compute_faithfulness(predictions, predictions_masked):
     "This function implements the faithful metric (FF) used in the L-MAC paper."
     # get the prediction indices
-    pred_cl = (predictions > 0.5).float()
-    predictions_masked_selected = (predictions_masked > 0.5).float()
+    # pred_cl = (predictions > 0.5).float()
+    # predictions_masked_selected = (predictions_masked > 0.5).float()
 
-    faithfulness = pred_cl - predictions_masked_selected  # .squeeze(dim=1)
+    faithfulness = predictions - predictions_masked  # .squeeze(dim=1)
 
     return faithfulness
 
@@ -132,8 +141,8 @@ def compute_faithfulness(predictions, predictions_masked):
 @torch.no_grad()
 def compute_AD(theta_out, predictions):
     """Computes top-`k` fidelity of interpreter."""
-    pred_cl = (predictions > 0.5).float()
-    theta_out = (theta_out > 0.5).float()
+    pred_cl = predictions
+    theta_out = theta_out
 
     # 1 element for each sample in batch, is 0 if pred_cl is in top k
     temp = (F.relu(pred_cl - theta_out) / (pred_cl + eps)) * 100
@@ -144,8 +153,8 @@ def compute_AD(theta_out, predictions):
 @torch.no_grad()
 def compute_AI(theta_out, predictions):
     """Computes top-`k` fidelity of interpreter."""
-    pc = (predictions > 0.5).float()
-    oc = (theta_out > 0.5).float()
+    pc = predictions
+    oc = theta_out
 
     # 1 element for each sample in batch, is 0 if pred_cl is in top k
     temp = (pc < oc).float() * 100
@@ -156,8 +165,8 @@ def compute_AI(theta_out, predictions):
 @torch.no_grad()
 def compute_AG(theta_out, predictions):
     """Computes top-`k` fidelity of interpreter."""
-    pc = (predictions > 0.5).float()
-    oc = (theta_out > 0.5).float()
+    pc = predictions
+    oc = theta_out
 
     # 1 element for each sample in batch, is 0 if pred_cl is in top k
     temp = (F.relu(oc - pc) / (1 - pc + eps)) * 100
@@ -356,7 +365,10 @@ def eval_one_epoch_combined(
 
             # Masked predictions
             predictions_masked = model(
-                batch["input_values"], mask=1 - attr, phase=phase
+                batch["input_values"],
+                mask=1 - attr,
+                phase=phase,
+                # batch["input_values"], mask=1.0 - attr, phase=phase
             )  # mask_out
             theta = model(batch["input_values"], mask=attr, phase=phase)  # mask_in
 
