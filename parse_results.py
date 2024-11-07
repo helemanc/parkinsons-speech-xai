@@ -11,7 +11,10 @@ if __name__ == "__main__":
 
     df = []
     for pair in glob.glob(f"{rfolder}/*"):
-        m1, m2 = pair.split("_")
+        try:
+            m1, m2 = pair.split("_")
+        except:
+            m1 = m2 = pair
 
         try:
             man = {}
@@ -30,3 +33,6 @@ if __name__ == "__main__":
     df = pd.DataFrame.from_records(df)
     breakpoint()
     print(df.head())
+
+    rfolder = rfolder.replace("/", "_")
+    df.to_csv(f"parsed_{rfolder}.csv")
