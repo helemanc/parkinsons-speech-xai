@@ -12,8 +12,8 @@
             "console": "integratedTerminal",
             "args": [
                 "--config", "configs/W_config.yaml",
-                "--training.checkpoint_path", "/mnt/hdd/emancini/Repositories_Ele/parkinsons-speech-interpretability/checkpoints/SSL4PR-wavlm-base/", 
-                "--model.model_name_or_path",  "microsoft/wavlm-base-plus",  "--data.fold_root_path",  "/mnt/hdd/emancini/Repositories_Ele/parkinsons-speech-interpretability/pcgita_splits"
+                "--training.checkpoint_path", "/mnt/hdd/emancini/Repositories_Ele/parkinsons-speech-interpretability/checkpoints/SSL4PR-hubert-base/", 
+                "--model.model_name_or_path",  "facebook/hubert-base-ls960",  "--data.fold_root_path",  "/mnt/hdd/emancini/Repositories_Ele/parkinsons-speech-interpretability/pcgita_splits"
             ]
         },
         {
