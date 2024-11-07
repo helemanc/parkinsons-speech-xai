@@ -520,14 +520,20 @@ if __name__ == "__main__":
             run_on_main(hparams["pretrained_encoder"].collect_files)
             hparams["pretrained_encoder"].load_collected()
 
+        
+        epoch_counter = sb.utils.epoch_loop.EpochCounter(limit=hparams["number_of_epochs"])
+
+
         if not hparams["test_only"]:
             ESC50_brain.fit(
-                epoch_counter=ESC50_brain.hparams.epoch_counter,
+                epoch_counter=epoch_counter,
                 train_set=train_dataloader,
                 valid_set=val_dataloader,
                 train_loader_kwargs=hparams["dataloader_options"],
                 valid_loader_kwargs=hparams["dataloader_options"],
             )
+        
+
 
         # Load the best checkpoint for evaluation
         avg_test_loss, avg_accuracy, avg_f1, avg_mask_mean, avg_selective_accuracy, avg_selective_f1  = ESC50_brain.evaluate(
