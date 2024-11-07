@@ -55,21 +55,35 @@ adds_params = {
     "ggc": {},
 }
 
-overlap = False
+overlap = True
 
 
-def compute_overlap_attribution(attribution1, attribution2):
+def compute_overlap_attribution(attribution1, attribution2, overlap_strategy = "sum"):
     # Ensure both attributions are of the same shape
     assert (
         attribution1.shape == attribution2.shape
     ), "Attributions must have the same shape"
 
     # Calculate the overlap attribution
-    overlap_attribution = (attribution1 * attribution2) / (
-        attribution1 + attribution2 + 1e-10
-    )
+    # iou = (attribution1 * attribution2) / (
+    #     attribution1 + attribution2 + 1e-10
+    # ) #IoU
+    a1 = (attribution1 >= 0.4 * attribution1.reshape((attribution1.shape[0], -1)).max(-1).values[..., None, None]).float()
+    a2 = (attribution2 >= 0.4 * attribution1.reshape((attribution2.shape[0], -1)).max(-1).values[..., None, None]).float()
 
-    return overlap_attribution
+    iou = (a1 * a2).sum() / ((a1 + a2) > 0).float().sum()
+
+
+    if overlap_strategy == "sum":
+        overlap_attribution = attribution1 + attribution2
+    elif overlap_strategy == "prod":
+        overlap_attribution = attribution1 * attribution2
+    
+    overlap_attribution = overlap_attribution/overlap_attribution.max()
+
+
+
+    return iou, overlap_attribution
 
 
 def compute_metrics(
@@ -132,8 +146,12 @@ def compute_faithfulness(predictions, predictions_masked):
     # get the prediction indices
     # pred_cl = (predictions > 0.5).float()
     # predictions_masked_selected = (predictions_masked > 0.5).float()
+    ones = (predictions > 0.5).float()
+    faithfulness = (predictions - predictions_masked) * ones  # .squeeze(dim=1)
 
-    faithfulness = predictions - predictions_masked  # .squeeze(dim=1)
+    zeros = (predictions <= 0.5).float()
+    # 1 - px - (1-pxo) = pxo - px
+    faithfulness +=  (predictions_masked - predictions) * zeros
 
     return faithfulness
 
@@ -514,6 +532,7 @@ def save_metrics(overall_metrics, output_folder):
                     "faithfulness",
                     "sparseness",
                     "complexity",
+                    "iou"
                 }
                 else 1
             ),
@@ -529,6 +548,7 @@ def save_metrics(overall_metrics, output_folder):
                     "faithfulness",
                     "sparseness",
                     "complexity",
+                    "iou"
                 }
                 else 1
             ),
@@ -661,6 +681,7 @@ def compute_attributions(
 
 def compute_overlap_attributions(
     pretrained_model,
+    config,
     device,
     loss_fn,
     class_mapping,
@@ -677,7 +698,7 @@ def compute_overlap_attributions(
         for j, strategy2 in enumerate(int_strategies.keys()):
             if i < j:
                 output_folder = create_directory(
-                    os.path.join(overlap_dir, f"{strategy1}_{strategy2}")
+                    os.path.join(overlap_dir, f"{strategy1}_{strategy2}", config["overlap_strategy"])
                 )
                 for test_fold in range(1, 11):
                     model = load_model(test_fold, config, device, class_mapping)
@@ -743,14 +764,15 @@ def compute_overlap_attributions(
                     assert torch.equal(phases1, phases2), "Phases must match"
 
                     # Compute overlap
-                    overlaps = compute_overlap_attribution(attribution1, attribution2)
+                    iou, overlaps = compute_overlap_attribution(attribution1, attribution2, config["overlap_strategy"])
                     dataloader = torch.utils.data.DataLoader(
                         torch.utils.data.TensorDataset(
                             overlaps, originals1, labels1, phases1
                         ),
                         batch_size=config.training.batch_size,
                         shuffle=False,
-                    )
+                        )
+                    
 
                     attributions_dir = create_directory(
                         os.path.join(output_folder, "attributions")
@@ -810,6 +832,8 @@ def compute_overlap_attributions(
                         originals=originals,
                     )
 
+                    interpretability_metrics["iou"] = iou.float().mean().item()
+
                     # Print metrics
                     print(f"-" * 20, f"Fold {test_fold} Results", "-" * 20)
                     for k, v in metrics.items():
@@ -829,6 +853,12 @@ def compute_overlap_attributions(
                     # Clear model from memory
                     del model
                     torch.cuda.empty_cache()
+
+                    print(f"-" * 20, f"Fold {test_fold} Results", "-" * 20)
+                    for k, v in interpretability_metrics.items():
+                        print(f"{k}: {v}")
+
+               
 
                 # Save all metrics
                 save_metrics(overall_metrics, output_folder)
@@ -879,6 +909,7 @@ def main(config):
             "faithfulness",
             "sparseness",
             "complexity",
+            "iou"
         ]
     }
 
@@ -896,6 +927,7 @@ def main(config):
     else:
         compute_overlap_attributions(
             pretrained_model,
+            config,
             device,
             loss_fn,
             class_mapping,

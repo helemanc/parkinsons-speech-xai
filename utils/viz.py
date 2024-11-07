@@ -184,3 +184,43 @@ def save_interpretations_for_conditions(fold_dir, original, attr, phase, labels,
             plotted = True
 
 
+def save_spectrograms(net_input, output_folder, sample_rate=16000, hop_length_samples=185, win_length_samples=371):
+    """
+    Save the spectrograms of the given net_input to a temporary folder for visualization.
+
+    Args:
+    - net_input (Tensor): The input spectrograms to be saved, assumed to be a batch of spectrograms.
+    - output_folder (str): The directory where spectrograms will be saved.
+    - sample_rate (int, optional): The sample rate for the spectrograms. Default is 16000.
+    - hop_length_samples (int, optional): The hop length in samples. Default is 185.
+    - win_length_samples (int, optional): The window length in samples. Default is 371.
+    """
+    # Create the tmp directory if it doesn't exist
+    fold_dir = os.path.join(output_folder, "tmp")
+    os.makedirs(fold_dir, exist_ok=True)
+
+    # Loop through each net_input (spectrogram)
+    for i in range(len(net_input)):
+        random_number = np.random.randint(0, 1000)
+
+        # Create a figure to plot the spectrogram
+        fig, ax = plt.subplots(figsize=(10, 5))  # Only one plot area
+
+        # Plot the spectrogram with a linear y-axis
+        img = librosa.display.specshow(net_input[i].cpu().numpy().T, 
+                                       sr=sample_rate, 
+                                       n_fft=1024, 
+                                       hop_length=hop_length_samples, 
+                                       win_length=win_length_samples, 
+                                       x_axis="time", 
+                                       y_axis="linear", 
+                                       ax=ax, cmap="plasma")
+        ax.set_title("Original Spectrogram (Linear Scale)")
+        plt.colorbar(img, ax=ax)
+
+        # Adjust layout and save the figure
+        plt.tight_layout(pad=3.0)
+        figname = os.path.join(fold_dir, f"single_spectrogram_linear_{random_number}.png")
+        plt.savefig(figname, format="png", dpi=300, bbox_inches="tight")
+        plt.show()
+        plt.close()
