@@ -101,9 +101,9 @@ def get_stratified_dataloaders_for_fold(fold, config, model_dir, strategy):
     test_dataset = Subset(dataset, test_indices)
 
     # Create DataLoaders for each split
-    train_loader = DataLoader(train_dataset, batch_size=config.training.batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=config.training.batch_size, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=config.training.batch_size, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=config["batch_size"], shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=config["batch_size"], shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=config["batch_size"], shuffle=False)
 
     return train_loader, val_loader, test_loader
 

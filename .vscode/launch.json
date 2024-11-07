@@ -15,6 +15,22 @@
                 "--training.checkpoint_path", "/mnt/hdd/emancini/Repositories_Ele/parkinsons-speech-interpretability/checkpoints/SSL4PR-wavlm-base/", 
                 "--model.model_name_or_path",  "microsoft/wavlm-base-plus",  "--data.fold_root_path",  "/mnt/hdd/emancini/Repositories_Ele/parkinsons-speech-interpretability/pcgita_splits"
             ]
+        },
+        {
+            "name": "Python: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": [
+                    "configs/cnn14.yaml",
+                    "--checkpoint_path", "/mnt/hdd/emancini/Repositories_Ele/parkinsons-speech-interpretability/checkpoints/SSL4PR-wavlm-base/",
+                    "--model_name_or_path", "microsoft/wavlm-base-plus",
+                    "--fold_root_path", "/mnt/hdd/emancini/Repositories_Ele/parkinsons-speech-interpretability/pcgita_splits",
+                    "--strategy_key", "saliency",
+                    "--batch_size", "32",
+                    "--number_of_epochs", "2",]
+    
         }
     ]
 }
