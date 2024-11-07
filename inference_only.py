@@ -41,18 +41,18 @@ eps = 1e-10
 int_strategies = {
     "saliency": Saliency,
     "gbp": GuidedBackprop,
-    # "ig": IntegratedGradients,
-    # "shap": GradientShap,
-    # "smoothgrad": NoiseTunnel,
-    # "ggc": GuidedGradCam,
+    "ig": IntegratedGradients,
+    "shap": GradientShap,
+    "smoothgrad": NoiseTunnel,
+    "ggc": GuidedGradCam,
 }
 adds_params = {
     "saliency": {},
     "gbp": {},
-    # "ig": {"n_steps": 5},
-    # "shap": {},
-    # "smoothgrad": {"nt_type": "smoothgrad", "nt_samples": 10},
-    # "ggc": {},
+    "ig": {"n_steps": 5},
+    "shap": {},
+    "smoothgrad": {"nt_type": "smoothgrad", "nt_samples": 10},
+    "ggc": {},
 }
 
 overlap = True
@@ -146,8 +146,12 @@ def compute_faithfulness(predictions, predictions_masked):
     # get the prediction indices
     # pred_cl = (predictions > 0.5).float()
     # predictions_masked_selected = (predictions_masked > 0.5).float()
+    ones = (predictions > 0.5).float()
+    faithfulness = (predictions - predictions_masked) * ones  # .squeeze(dim=1)
 
-    faithfulness = predictions - predictions_masked  # .squeeze(dim=1)
+    zeros = (predictions <= 0.5).float()
+    # 1 - px - (1-pxo) = pxo - px
+    faithfulness +=  (predictions_masked - predictions) * zeros
 
     return faithfulness
 
