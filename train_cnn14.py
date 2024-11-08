@@ -58,7 +58,7 @@ class ESC50Brain(sb.core.Brain):
        
         batch = [item.to(self.device) for item in batch]
 
-        original, _, saliency_map, _ = batch #original and saliency map are log-magnitude spectrograms
+        original, mask , saliency_map, _ = batch #original and saliency map are log-magnitude spectrograms
 
         if self.hparams.use_masks:
             net_input = saliency_map
@@ -357,6 +357,9 @@ class ESC50Brain(sb.core.Brain):
         def mask_mean(mask):
             return torch.tensor([mask.mean()])
         
+        def mask_std(mask):
+            return torch.tensor([mask.std()])
+        
         def selective_accuracy(predict, target,  mask_mean): 
             accuracy = accuracy_value(predict, target)
             return accuracy * (1 - mask_mean)
@@ -385,6 +388,10 @@ class ESC50Brain(sb.core.Brain):
             metric=selective_f1, n_jobs=1
         )
 
+        self.mask_std = sb.utils.metric_stats.MetricStats(
+            metric=mask_std, n_jobs=1
+        )
+
 
         with torch.no_grad():
             for batch in tqdm(
@@ -405,11 +412,13 @@ class ESC50Brain(sb.core.Brain):
                 preds_sigmoid = preds_sigmoid.to(self.device)
                 preds_sigmoid = (preds_sigmoid > 0.5).float().squeeze(1)
                 mask_mean_val = mask_mean(masks)
+                
                 self.acc_metric.append(torch.ones(len(label)), preds_sigmoid.to(self.device), label.to(self.device))
                 self.f1_metric.append(torch.ones(len(label)), preds_sigmoid.to(self.device), label.to(self.device))
                 self.mask_mean.append(torch.ones(len(label)), masks)
                 self.selective_accuracy.append(torch.ones(len(label)), preds_sigmoid.to(self.device), label.to(self.device), mask_mean_val)
                 self.selective_f1.append(torch.ones(len(label)), preds_sigmoid.to(self.device), label.to(self.device), mask_mean_val)
+                self.mask_std.append(torch.ones(len(label)), masks)
 
                 # Debug mode only runs a few batches
                 if self.debug and self.step == self.debug_batches:
@@ -425,8 +434,9 @@ class ESC50Brain(sb.core.Brain):
         avg_mask_mean = self.mask_mean.summarize("average")
         avg_selective_accuracy = self.selective_accuracy.summarize("average")
         avg_selective_f1 = self.selective_f1.summarize("average")
+        avg_mask_std = self.mask_std.summarize("average")
 
-        return avg_test_loss, avg_accuracy, avg_f1, avg_mask_mean, avg_selective_accuracy, avg_selective_f1
+        return avg_test_loss, avg_accuracy, avg_f1, avg_mask_mean, avg_selective_accuracy, avg_selective_f1, avg_mask_std
 
 
 
@@ -468,6 +478,7 @@ if __name__ == "__main__":
     avg_mask_mean_list = []
     avg_selective_accuracy_list = []
     avg_selective_f1_list = []
+    avg_mask_std_list = []
 
     
     for test_fold in range(1, 11):
@@ -536,7 +547,7 @@ if __name__ == "__main__":
 
 
         # Load the best checkpoint for evaluation
-        avg_test_loss, avg_accuracy, avg_f1, avg_mask_mean, avg_selective_accuracy, avg_selective_f1  = ESC50_brain.evaluate(
+        avg_test_loss, avg_accuracy, avg_f1, avg_mask_mean, avg_selective_accuracy, avg_selective_f1, avg_mask_std  = ESC50_brain.evaluate(
             test_set=test_dataloader,
             min_key="error",
             progressbar=True,
@@ -549,12 +560,14 @@ if __name__ == "__main__":
         print("avg_mask_mean: ", avg_mask_mean)
         print("avg_selective_accuracy: ", avg_selective_accuracy)
         print("avg_selective_f1: ", avg_selective_f1)
+        print("avg_mask_std: ", avg_mask_std)
 
         avg_accuracy_list.append(avg_accuracy)
         avg_f1_list.append(avg_f1)
         avg_mask_mean_list.append(avg_mask_mean)
         avg_selective_accuracy_list.append(avg_selective_accuracy)
         avg_selective_f1_list.append(avg_selective_f1)
+        avg_mask_std_list.append(avg_mask_std)
 
 
 
@@ -565,7 +578,8 @@ if __name__ == "__main__":
                             "avg_f1": avg_f1,
                             "avg_mask_mean": avg_mask_mean,
                             "avg_selective_accuracy": avg_selective_accuracy,
-                            "avg_selective_f1": avg_selective_f1}, f, indent=4)
+                            "avg_selective_f1": avg_selective_f1,
+                            "avg_mask_std": avg_mask_std}, f, indent=4)
     
     # Save the average results for all the foldsù
     if hparams["use_masks"]:
@@ -577,5 +591,6 @@ if __name__ == "__main__":
                     "avg_f1": np.mean(avg_f1_list),
                     "avg_mask_mean": np.mean(avg_mask_mean_list),
                     "avg_selective_accuracy": np.mean(avg_selective_accuracy_list),
-                    "avg_selective_f1": np.mean(avg_selective_f1_list)}, f, indent=4)
+                    "avg_selective_f1": np.mean(avg_selective_f1_list),
+                    "avg_mask_std": avg_mask_std}, f, indent=4)
             
