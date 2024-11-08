@@ -1,4 +1,4 @@
-overlap_strategy: "prod" #prod
+overlap_strategy: "sum" #prod
 data:
   fold_root_path: "/localscratch/fpaissan.46976045.0/PC-GITA_per_task_44100Hz"
   val_path: None # filled dynamically
