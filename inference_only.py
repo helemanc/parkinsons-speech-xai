@@ -812,10 +812,6 @@ def compute_overlap_attributions(
                         is_binary_classification=is_binary_classification,
                     )
 
-                    viz.plot_comparative_maps(originals[0], attribution1, attribution2, strategy1, strategy2, labels1[0], test_predictions[0],
-                          sample_rate=16000, hop_length_samples=185, win_length_samples=371, 
-                          save_path=os.path.join(visualizations_fold_dir, "comparative_maps.png"))
-
                     # Compute metrics
                     metrics = compute_metrics(
                         test_reference,
