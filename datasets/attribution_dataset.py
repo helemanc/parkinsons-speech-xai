@@ -54,7 +54,7 @@ class SpectrogramAttributionDataset(Dataset):
             mask_normalized
         )  # Element-wise multiplication to create saliency map
 
-        return original, attribution.float(), saliency_map.float(), label
+        return original, mask_normalized.float(), saliency_map.float(), label
 
 
 def stratified_split(dataset, train_ratio=0.7, val_ratio=0.15):
