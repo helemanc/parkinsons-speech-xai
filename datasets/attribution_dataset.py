@@ -40,7 +40,7 @@ class SpectrogramAttributionDataset(Dataset):
         mask_normalized = (attr_np - np.min(attr_np)) / (np.max(attr_np) - np.min(attr_np) + 1e-5)  # Add epsilon to avoid division by zero
         saliency_map = original * torch.from_numpy(mask_normalized)  # Element-wise multiplication to create saliency map
         
-        return original, attribution, saliency_map, label
+        return original, mask_normalized, saliency_map, label
 
 
 def stratified_split(dataset, train_ratio=0.7, val_ratio=0.15):

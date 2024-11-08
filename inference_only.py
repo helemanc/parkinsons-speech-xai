@@ -41,18 +41,18 @@ eps = 1e-10
 int_strategies = {
     "saliency": Saliency,
     "gbp": GuidedBackprop,
-    "ig": IntegratedGradients,
-    "shap": GradientShap,
-    "smoothgrad": NoiseTunnel,
-    "ggc": GuidedGradCam,
+    # "ig": IntegratedGradients,
+    # "shap": GradientShap,
+    # "smoothgrad": NoiseTunnel,
+    # "ggc": GuidedGradCam,
 }
 adds_params = {
     "saliency": {},
     "gbp": {},
-    "ig": {"n_steps": 5},
-    "shap": {},
-    "smoothgrad": {"nt_type": "smoothgrad", "nt_samples": 10},
-    "ggc": {},
+    # "ig": {"n_steps": 5},
+    # "shap": {},
+    # "smoothgrad": {"nt_type": "smoothgrad", "nt_samples": 10},
+    # "ggc": {},
 }
 
 overlap = True
@@ -789,7 +789,8 @@ def compute_overlap_attributions(
                             output_folder, "interpretations", f"fold_{test_fold}"
                         )
                     )
-
+                    
+                    
                     (
                         _,
                         test_reference,
@@ -810,6 +811,10 @@ def compute_overlap_attributions(
                         fold_dir=visualizations_fold_dir,
                         is_binary_classification=is_binary_classification,
                     )
+
+                    viz.plot_comparative_maps(originals[0], attribution1, attribution2, strategy1, strategy2, labels1[0], test_predictions[0],
+                          sample_rate=16000, hop_length_samples=185, win_length_samples=371, 
+                          save_path=os.path.join(visualizations_fold_dir, "comparative_maps.png"))
 
                     # Compute metrics
                     metrics = compute_metrics(

@@ -27,7 +27,7 @@ model_name_or_path: microsoft/wavlm-base-plus
 checkpoint_path: "checkpoints/Multimodal_WS/"
 use_masks: False
 save_specs: False
-
+overlap_strategy: "sum" #prod
 
 
 add_wham_noise: False

@@ -24,10 +24,10 @@
             "console": "integratedTerminal",
             "args": [
                     "configs/cnn14.yaml",
-                    "--checkpoint_path", "/mnt/hdd/emancini/Repositories_Ele/parkinsons-speech-interpretability/checkpoints/SSL4PR-wavlm-base/",
-                    "--model_name_or_path", "microsoft/wavlm-base-plus",
+                    "--checkpoint_path", "/mnt/hdd/emancini/Repositories_Ele/parkinsons-speech-interpretability/checkpoints/SSL4PR-hubert-base/",
+                    "--model_name_or_path",  "facebook/hubert-base-ls960",
                     "--fold_root_path", "/mnt/hdd/emancini/Repositories_Ele/parkinsons-speech-interpretability/pcgita_splits",
-                    "--strategy_key", "saliency",
+                    "--strategy_key", "gbp",
                     "--batch_size", "32",
                     "--number_of_epochs", "2",]
     

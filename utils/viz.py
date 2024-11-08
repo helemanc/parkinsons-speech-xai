@@ -201,7 +201,7 @@ def save_spectrograms(net_input, output_folder, sample_rate=16000, hop_length_sa
 
     # Loop through each net_input (spectrogram)
     for i in range(len(net_input)):
-        random_number = np.random.randint(0, 1000)
+        #random_number = np.random.randint(0, 1000)
 
         # Create a figure to plot the spectrogram
         fig, ax = plt.subplots(figsize=(10, 5))  # Only one plot area
@@ -220,7 +220,67 @@ def save_spectrograms(net_input, output_folder, sample_rate=16000, hop_length_sa
 
         # Adjust layout and save the figure
         plt.tight_layout(pad=3.0)
-        figname = os.path.join(fold_dir, f"single_spectrogram_linear_{random_number}.png")
+        figname = os.path.join(fold_dir, f"single_spectrogram_linear_{i}.png")
         plt.savefig(figname, format="png", dpi=300, bbox_inches="tight")
         plt.show()
         plt.close()
+
+
+def plot_comparative_maps(original, attr1, attr2, strategy1_name, strategy2_name, 
+                          target, prediction, 
+                          sample_rate=16000, hop_length_samples=185, win_length_samples=371, 
+                          save_path=None):
+    # Normalize the attribution maps
+    mask1_normalized = (attr1 - np.min(attr1)) / (np.max(attr1) - np.min(attr1))
+    mask2_normalized = (attr2 - np.min(attr2)) / (np.max(attr2) - np.min(attr2))
+
+    # Create the saliency maps
+    saliency_map1 = original * mask1_normalized
+    saliency_map2 = original * mask2_normalized
+
+    # Set up the plot with a single axis and shared settings
+    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+    fig.suptitle(f"Target: {target}, Prediction: {prediction}", fontsize=16)
+    cmap = "plasma"
+
+    # Plot original spectrogram
+    img = librosa.display.specshow(original, sr=sample_rate, n_fft=1024, 
+                                   hop_length=hop_length_samples, win_length=win_length_samples, 
+                                   x_axis="time", y_axis="linear", ax=axes[0, 0], cmap=cmap)
+    axes[0, 0].set_title("Original")
+
+    # Plot the two attribution masks
+    librosa.display.specshow(mask1_normalized, sr=sample_rate, n_fft=1024, 
+                             hop_length=hop_length_samples, win_length=win_length_samples, 
+                             x_axis="time", y_axis="linear", ax=axes[0, 1], cmap=cmap)
+    axes[0, 1].set_title(f"{strategy1_name} Mask")
+
+    librosa.display.specshow(mask2_normalized, sr=sample_rate, n_fft=1024, 
+                             hop_length=hop_length_samples, win_length=win_length_samples, 
+                             x_axis="time", y_axis="linear", ax=axes[0, 2], cmap=cmap)
+    axes[0, 2].set_title(f"{strategy2_name} Mask")
+
+    # Plot the two saliency maps
+    librosa.display.specshow(saliency_map1, sr=sample_rate, n_fft=1024, 
+                             hop_length=hop_length_samples, win_length=win_length_samples, 
+                             x_axis="time", y_axis="linear", ax=axes[1, 1], cmap=cmap)
+    axes[1, 1].set_title(f"{strategy1_name} Saliency Map")
+
+    librosa.display.specshow(saliency_map2, sr=sample_rate, n_fft=1024, 
+                             hop_length=hop_length_samples, win_length=win_length_samples, 
+                             x_axis="time", y_axis="linear", ax=axes[1, 2], cmap=cmap)
+    axes[1, 2].set_title(f"{strategy2_name} Saliency Map")
+
+    # Hide any unused axes
+    axes[1, 0].axis("off")
+
+    # Add colorbar for visual consistency
+    fig.colorbar(img, ax=axes, orientation='horizontal', fraction=0.03, pad=0.05)
+
+    # Save the plot if a save path is provided
+    if save_path:
+        plt.savefig(save_path, format='png', dpi=300)
+
+    plt.tight_layout()
+    plt.show()
+
