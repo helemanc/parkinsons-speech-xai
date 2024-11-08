@@ -1,4 +1,6 @@
-# SSL4PR: Self-supervised learning for Parkinson's Recognition
+# XAI for Parkinson's Detection 
+
+<!-- # SSL4PR: Self-supervised learning for Parkinson's Recognition
 
 This project aims at creating a DL system for Parkinson's recognition from speech. It leverages self-supervised learning models to transfer knowledge acquired by foundational models to the task of Parkinson's recognition. The project is based on the PC-GITA dataset and the proposed model is evaluated using 10-fold cross-validation.
 
@@ -112,4 +114,4 @@ If you use this code, results from this project or you want to refer to the pape
 ```
 Will be available upon INTERSPEECH 2024 proceedings.
 ```
-
+ -->
