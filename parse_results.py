@@ -18,7 +18,7 @@ if __name__ == "__main__":
 
         try:
             man = {}
-            with open(f"{pair}/average_metrics.json", "r") as f:
+            with open(f"{pair}/sum/average_metrics.json", "r") as f:
                 metrics = json.load(f)
 
             for k in metrics:

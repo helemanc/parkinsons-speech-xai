@@ -12,28 +12,37 @@ import torch
 import torch.nn.functional as F
 import torchaudio
 from addict import Dict
-from captum.attr import (GradientShap, GuidedBackprop, GuidedGradCam,
-                         IntegratedGradients, NoiseTunnel, Saliency)
+from captum.attr import (
+    GradientShap,
+    GuidedBackprop,
+    GuidedGradCam,
+    IntegratedGradients,
+    NoiseTunnel,
+    Saliency,
+)
 from captum.attr import visualization as viz
-from sklearn.metrics import (accuracy_score, confusion_matrix,
-                             precision_recall_fscore_support, roc_auc_score)
+from sklearn.metrics import (
+    accuracy_score,
+    confusion_matrix,
+    precision_recall_fscore_support,
+    roc_auc_score,
+)
 from speechbrain.processing.features import ISTFT, STFT
 from speechbrain.utils.metric_stats import MetricStats
 from tqdm import tqdm
 from yaml_config_override import add_arguments
 
 from datasets.audio_classification_dataset import AudioClassificationDataset
-from models.ssl_classification_model import (InvertibleTF,
-                                             SSLClassificationModel)
+from models.ssl_classification_model import InvertibleTF, SSLClassificationModel
 from utils import viz
 
 eps = 1e-10
 
 int_strategies = {
     # "saliency": Saliency,
-    # "gbp": GuidedBackprop,
+    "gbp": GuidedBackprop,
     "ig": IntegratedGradients,
-    # "shap": GradientShap,
+    "shap": GradientShap,
     # "smoothgrad": NoiseTunnel,
     "ggc": GuidedGradCam,
 }
@@ -41,12 +50,12 @@ adds_params = {
     # "saliency": {},
     "gbp": {},
     "ig": {"n_steps": 5},
-    # "shap": {},
+    "shap": {},
     # "smoothgrad": {"nt_type": "smoothgrad", "nt_samples": 10},
-    # "ggc": {},
+    "ggc": {},
 }
 
-overlap = True
+overlap = False
 
 
 def compute_overlap_attribution(attribution1, attribution2, overlap_strategy="sum"):
@@ -610,6 +619,42 @@ def compute_attributions(
             strategy=strategy,
         )
 
+        for idx in range(len(outputs)):
+            if test_reference[idx] == (outputs[idx] > 0.5).float():
+                break
+
+        fff = torch.linspace(0, 513 * 16_000 / 1024, 10)
+        ttt = torch.linspace(0, 3, 50)
+        plt.imshow(
+            torch.log1p(originals[idx].t() * 200),
+            origin="lower",
+            cmap="inferno",
+            aspect="auto",
+            extent=[0, ttt.max(), fff.min(), fff.max()],
+        )
+        plt.title("Original", fontsize=20)
+        plt.xlabel("Time [s]", fontsize=15)
+        plt.ylabel("Frequency [Hz]", fontsize=15)
+        # plt.yticks(fff, labels=[f"{int(freq)}" for freq in fff])
+        plt.tight_layout()
+        plt.savefig("original.pdf")
+
+        plt.imshow(
+            torch.log1p(attributions[idx].t() * 200),
+            origin="lower",
+            aspect="auto",
+            cmap="inferno",
+            extent=[0, ttt.max(), fff.min(), fff.max()],
+        )
+        plt.title("Guided Backprop", fontsize=20)
+        plt.xlabel("Time [s]", fontsize=15)
+        plt.ylabel("Frequency [Hz]", fontsize=15)
+        # plt.yticks(fff, labels=[f"{int(freq)}" for freq in fff])
+        plt.tight_layout()
+        plt.savefig("shap.pdf")
+
+        breakpoint()
+
         # Save attributions and results
         save_tensor(
             attributions, os.path.join(attributions_fold_dir, "attributions.pt")
@@ -816,23 +861,21 @@ def compute_overlap_attributions(
                         is_binary_classification=is_binary_classification,
                     )
 
-                    breakpoint()
+                    for idx in range(len(outputs)):
+                        if test_reference[idx] == (outputs[idx] > 0.5).float():
+                            break
 
-                    viz.plot_comparative_maps(
-                        originals[0],
-                        attribution1,
-                        attribution2,
-                        strategy1,
-                        strategy2,
-                        labels1[0],
-                        test_predictions[0],
-                        sample_rate=16000,
-                        hop_length_samples=185,
-                        win_length_samples=371,
-                        save_path=os.path.join(
-                            visualizations_fold_dir, "comparative_maps.png"
-                        ),
-                    )
+                    plt.imshow(originals[idx].t(), origin="lower", cmap="inferno")
+                    plt.title("Original")
+                    plt.tight_layout()
+                    plt.savefig("original.pdf")
+
+                    plt.imshow(attributions[idx].t(), origin="lower", cmap="inferno")
+                    plt.title("Integrated Gradients")
+                    plt.tight_layout()
+                    plt.savefig("original.pdf")
+
+                    breakpoint()
 
                     # Compute metrics
                     metrics = compute_metrics(
