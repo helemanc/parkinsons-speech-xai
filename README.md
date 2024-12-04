@@ -16,7 +16,6 @@ Our results highlight that while the explanations align with the classifier’s 
 - [Experiments](#experiments)
   - [Train SSL4PR model](#train-ssl4pr-model)
   - [Compute Explanations](#compute-explanations)
-  - [Faithfulness Metrics](#faithfulness-metrics)
   - [Train CNN14 Classifier to Evaluate Explanations](#train-cnn14-classifier-to-evaluate-explanations)
 - [Citation](#citation)
 
@@ -207,7 +206,7 @@ Ensure you use the configuration file located at `configs/cnn14.yaml` for the tr
 **N.B.** Training on saliency maps is possible only if the saliency maps have already been computed and stored in the `results` folder. To compute the explanations, please refer to the [Compute Explanations](#compute-explanations) section.
 
 
-###  gitCitation
+###  Citation
 
 If you use this code, results from this project or you want to refer to the paper, please cite the following paper:
 
