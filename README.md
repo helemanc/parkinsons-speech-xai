@@ -152,6 +152,7 @@ During this process, the results are stored in a `results` folder. If the folder
 To compute the metrics on the overlap, the `--overlap` flag must be set to `True`, and the `--overlap_strategy` can be set to either `sum` or `prod`. This will allow the calculation of faithfulness metrics, specifically focusing on the intersection-over-union (IoU) between explanations from different methods. 
 
 **Important Notes**
+
 ***Running Overlap***
 The `--overlap True` flag will compute explanations for the single methods (such as saliency maps, attributions, etc.) and will combine them based on the specified overlap strategy (`sum` or `prod`).
 
