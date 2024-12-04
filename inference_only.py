@@ -39,7 +39,7 @@ from utils import viz
 eps = 1e-10
 
 int_strategies = {
-    # "saliency": Saliency,
+    "saliency": Saliency,
     "gbp": GuidedBackprop,
     "ig": IntegratedGradients,
     "shap": GradientShap,
@@ -47,7 +47,7 @@ int_strategies = {
     "ggc": GuidedGradCam,
 }
 adds_params = {
-    # "saliency": {},
+    "saliency": {},
     "gbp": {},
     "ig": {"n_steps": 5},
     "shap": {},
@@ -306,6 +306,7 @@ def eval_one_epoch_combined(
     reference, predictions, speakers = [], [], []
     predictions_masked_list, theta_list, outputs_list = [], [], []
     attributions, originals, phases = [], [], []
+    speech_tasks = []
 
     tf = InvertibleTF()
 
@@ -402,6 +403,7 @@ def eval_one_epoch_combined(
             predictions_masked_list.extend(predictions_masked.cpu())
             theta_list.extend(theta.cpu())
             outputs_list.extend(outputs.cpu())
+            speech_tasks.extend(batch["speech_task"])
 
             # Loss calculation
             n_classes = outputs.shape[-1]
@@ -454,6 +456,7 @@ def eval_one_epoch_combined(
         attributions_tensor,
         originals_tensor,
         torch.stack(phases) if eval_mode else None,
+        speech_tasks
     )
 
 
@@ -609,6 +612,7 @@ def compute_attributions(
             attributions,
             originals,
             phases,
+            speech_tasks
         ) = eval_one_epoch_combined(
             model=model,
             dataloader=test_dl,
@@ -620,7 +624,7 @@ def compute_attributions(
         )
 
         for idx in range(len(outputs)):
-            if test_reference[idx] == (outputs[idx] > 0.5).float():
+            if test_reference[idx] != (outputs[idx] > 0.5).float() and speech_tasks[idx] == "read_text" and test_predictions[idx] == 1:
                 break
 
         fff = torch.linspace(0, 513 * 16_000 / 1024, 10)
@@ -637,7 +641,7 @@ def compute_attributions(
         plt.ylabel("Frequency [Hz]", fontsize=15)
         # plt.yticks(fff, labels=[f"{int(freq)}" for freq in fff])
         plt.tight_layout()
-        plt.savefig("original.pdf")
+        plt.savefig("original.jpg", dpi=300)
 
         plt.imshow(
             torch.log1p(attributions[idx].t() * 200),
@@ -646,12 +650,12 @@ def compute_attributions(
             cmap="inferno",
             extent=[0, ttt.max(), fff.min(), fff.max()],
         )
-        plt.title("Guided Backprop", fontsize=20)
+        plt.title("Guided GradCam", fontsize=20)
         plt.xlabel("Time [s]", fontsize=15)
         plt.ylabel("Frequency [Hz]", fontsize=15)
         # plt.yticks(fff, labels=[f"{int(freq)}" for freq in fff])
         plt.tight_layout()
-        plt.savefig("shap.pdf")
+        plt.savefig("ggc.jpg", dpi=300)
 
         breakpoint()
 
@@ -850,6 +854,7 @@ def compute_overlap_attributions(
                         outputs,
                         attributions,
                         originals,
+                        _,
                         _,
                     ) = eval_one_epoch_combined(
                         model=model,

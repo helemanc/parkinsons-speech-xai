@@ -366,6 +366,18 @@ class AudioClassificationDataset(Dataset):
             item["labels"] = torch.tensor(self.class_mapping[self.labels[idx]], dtype=torch.float)
         else:
             item["labels"] = torch.tensor(self.class_mapping[self.labels[idx]], dtype=torch.long)
+
+        
+        if "DDK_analysis" in audio_path:
+            item["speech_task"] = "DDK"
+        elif "read_text" in audio_path:
+            item["speech_task"] = "read_text"
+        elif "sentence" in audio_path:
+            item["speech_task"] = "sentence"
+        elif "monologue" in audio_path:
+            item["speech_task"] = "monologue"
+            
+        
             
         # speaker_id = os.path.basename(audio_path)
         # speaker_id = speaker_id.split("_")[0]
