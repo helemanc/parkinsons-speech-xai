@@ -1,3 +1,4 @@
+overlap: false
 overlap_strategy: "sum" #prod
 data:
   fold_root_path: "/localscratch/fpaissan.46976045.0/PC-GITA_per_task_44100Hz"

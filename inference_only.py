@@ -43,7 +43,7 @@ int_strategies = {
     "gbp": GuidedBackprop,
     "ig": IntegratedGradients,
     "shap": GradientShap,
-    # "smoothgrad": NoiseTunnel,
+    "smoothgrad": NoiseTunnel,
     "ggc": GuidedGradCam,
 }
 adds_params = {
@@ -51,11 +51,11 @@ adds_params = {
     "gbp": {},
     "ig": {"n_steps": 5},
     "shap": {},
-    # "smoothgrad": {"nt_type": "smoothgrad", "nt_samples": 10},
+    "smoothgrad": {"nt_type": "smoothgrad", "nt_samples": 10},
     "ggc": {},
 }
 
-overlap = False
+#overlap = False
 
 
 def compute_overlap_attribution(attribution1, attribution2, overlap_strategy="sum"):
@@ -960,6 +960,8 @@ def main(config):
         class_mapping = {0: 0, 1: 1, 2: 2, 3: 3}
         is_binary_classification = False
         loss_fn = torch.nn.CrossEntropyLoss()
+    
+    overlap = config["overlap"]
 
     overall_metrics = {
         metric: []
