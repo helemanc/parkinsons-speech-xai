@@ -11,10 +11,18 @@ Our results highlight that while the explanations align with the classifier’s 
 
 **Table of Contents**
 - [Setup](#setup)
+- [Dataset and Data Splits](#dataset-and-data-splits)
+- [Exploratory Data Analysis](#exploratory-data-analysis)
+- [Experiments](#experiments)
+  - [Train SSL4PR model](#train-ssl4pr-model)
+  - [Compute Explanations](#compute-explanations)
+  - [Faithfulness Metrics](#faithfulness-metrics)
+  - [Train CNN14 Classifier to Evaluate Explanations](#train-cnn14-classifier-to-evaluate-explanations)
+- [Citation](#citation)
 
 
 
-### 🔨 Setup 
+### Setup 
 The project is based on Python 3.11 and PyTorch 2. The following command can be used to install the dependencies:
 
 ```bash
@@ -31,7 +39,7 @@ export COMET_WORKSPACE=<your_project_name>
 **Disable logging**: 
 To disable the logging, you can set the `training.use_comet` key to `false` in the `configs/*.yaml` files.
 
-### 📚 Dataset and Data Splits
+### Dataset and Data Splits
 
 To make the results reproducible and comparable with the ones reported in the paper we make available the data splits used for 10-fold cross-validation. The splits are available in the `pcgita_splits` folder. The data is organized as follows:
 
@@ -66,7 +74,7 @@ where `<old_root_path>` can be set to `PC_GITA_ROOT_PATH` and `<new_root_path>` 
 **Note**: The splits are generated to ensure that the same speaker does not appear in both the training and testing sets and the classes are balanced across the splits.
 
 
-### 🔍 Exploratory Data Analysis 
+### Exploratory Data Analysis 
 To explore the structure of the data, you can run the following command:
 
 ```bash
@@ -74,7 +82,7 @@ python eda.py
 ```
 This will generate visualizations of the analyzed data and distributions. The results will be saved in the `results/eda` folder. You can use these visualizations to better understand the characteristics of the dataset and the distribution of different features.
 
-### 🔬 Experiments
+### Experiments
 
 #### Train SSL4PR model 
 To train the proposed model it is first needed to install the requirements and set the root path to the PC-GITA dataset. Then, the following command can be used to train the model:
@@ -142,13 +150,7 @@ where:
 During this process, the results are stored in a `results` folder. If the folder does not already exist, it will be created automatically. The computed explanations are saved in subfolders named after the model used (e.g., `hubert` or `wavlm`).
 
 **Faithfulness Metrics**
-To compute the metrics on the overlap, the `--overlap` flag must be set to `True`, and the `--overlap_strategy` can be set to either `sum` or `prod`. This will allow the calculation of faithfulness metrics, specifically focusing on the intersection-over-union (IoU) between explanations from different methods, as shown in Fig. 2.
-
-For the intersection strategy, the scatter plot in Fig. 2 illustrates how faithfulness metrics vary with increasing IoU. We observe a trend where greater mask overlap improves faithfulness metrics, particularly with metrics such as AD and FF.
-
-For the union strategy, we do not observe a linear trend with increasing IoU values, though union is more effective for some metrics (e.g., AD) on average.
-
-Overall, combining attribution strategies is most effective when the attributions are well-aligned, supporting the hypothesis that greater mask overlap improves faithfulness metrics.
+To compute the metrics on the overlap, the `--overlap` flag must be set to `True`, and the `--overlap_strategy` can be set to either `sum` or `prod`. This will allow the calculation of faithfulness metrics, specifically focusing on the intersection-over-union (IoU) between explanations from different methods. 
 
 **Important Notes**
 ***Running Overlap***
@@ -205,7 +207,7 @@ Ensure you use the configuration file located at `configs/cnn14.yaml` for the tr
 **N.B.** Training on saliency maps is possible only if the saliency maps have already been computed and stored in the `results` folder. To compute the explanations, please refer to the [Compute Explanations](#compute-explanations) section.
 
 
-###  📖  Citation
+###  gitCitation
 
 If you use this code, results from this project or you want to refer to the paper, please cite the following paper:
 
