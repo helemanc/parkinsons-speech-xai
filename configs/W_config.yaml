@@ -1,5 +1,6 @@
+overlap_strategy: "sum" #prod
 data:
-  fold_root_path: "/mnt/hdd/emancini/Repositories_Ele/parkinsons-speech-interpretability/pcgita_splits"
+  fold_root_path: "/localscratch/fpaissan.46976045.0/PC-GITA_per_task_44100Hz"
   val_path: None # filled dynamically
   max_length_in_seconds: 10
   padding: max_length
@@ -42,7 +43,7 @@ model:
 
 training:
   checkpoint_path: "checkpoints/Multimodal_WS/"
-  batch_size: 64
+  batch_size: 2
   gradient_accumulation_steps: 1
   num_epochs: 10
   learning_rate: 0.0001
@@ -51,6 +52,7 @@ training:
   pin_memory: true
   seed: 42
   verbose: true
+  strategy_key: "saliency"
 
   use_cuda: true
   multi_gpu: true

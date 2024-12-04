@@ -1,12 +1,13 @@
-import torch
-from torch import nn
-from transformers import AutoModel
-
 from typing import Optional
 
+import speechbrain as sb
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from speechbrain.processing.features import ISTFT, STFT
+from speechbrain.processing.NMF import spectral_phase
+from torch import nn
+from transformers import AutoModel
 
 
 class AttentionPoolingLayer(nn.Module):
@@ -17,10 +18,11 @@ class AttentionPoolingLayer(nn.Module):
     2. Applies a softmax to each vector (bs, seq_len, 1)
     3. Applies a weighted sum to the sequence (bs, embed_dim)
     """
+
     def __init__(self, embed_dim):
         super().__init__()
         self.linear = nn.Linear(embed_dim, 1)
-        
+
     def forward(self, x):
         """
         Forward pass.
@@ -37,18 +39,58 @@ class AttentionPoolingLayer(nn.Module):
         x = torch.sum(weights * x, dim=1)
         return x
 
+
+class InvertibleTF(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.enc = STFT(
+            n_fft=1024, hop_length=11.6099, win_length=23.2199, sample_rate=16000
+        )
+
+        self.dec = ISTFT(hop_length=11.6099, win_length=23.2199, sample_rate=16000)
+
+    def invert_stft_with_phase(self, X_int, X_stft_phase):
+        """Inverts STFT spectra given phase."""
+        X_int = X_int.expm1()
+        X_stft_phase_sb = torch.cat(
+            (
+                torch.cos(X_stft_phase).unsqueeze(-1),
+                torch.sin(X_stft_phase).unsqueeze(-1),
+            ),
+            dim=-1,
+        )
+
+        X_stft_phase_sb = X_stft_phase_sb[:, : X_int.shape[1], :, :]
+        if X_int.ndim == 3:
+            X_int = X_int.unsqueeze(-1)
+        X_wpsb = X_int * X_stft_phase_sb
+        x_int_sb = self.dec(X_wpsb)
+
+        return x_int_sb
+
+    def forward(self, wavs):
+        X_stft = self.enc(wavs)
+        X_stft_logpower = sb.processing.features.spectral_magnitude(
+            X_stft, power=0.5
+        ).log1p()
+
+        return X_stft_logpower, spectral_phase(X_stft)
+
+
 class SSLClassificationModel(nn.Module):
     def __init__(
-        self, 
+        self,
         config: Optional[dict] = None,
     ):
 
         super(SSLClassificationModel, self).__init__()
         if config is None:
-            raise ValueError("model_config must be provided to instantiate the classification model")
-        
+            raise ValueError(
+                "model_config must be provided to instantiate the classification model"
+            )
+
         self.config = config
-        
+
         self.model_name_or_path = self.config.model.model_name_or_path
         self.num_classes = self.config.model.num_classes
         self.classifier_type = self.config.model.classifier_type
@@ -60,14 +102,17 @@ class SSLClassificationModel(nn.Module):
         self.global_embedding_dim = 0
 
         if config is None:
-            raise ValueError("model_config must be provided to instantiate the classification model")
+            raise ValueError(
+                "model_config must be provided to instantiate the classification model"
+            )
 
         if self.config.data.ssl:
             self.ssl = True
             self.set_ssl_model(config)
             self.pooling_embedding_dim += self.ssl_model.config.hidden_size
             self.global_embedding_dim += self.ssl_model.config.hidden_size
-        else: self.ssl = False
+        else:
+            self.ssl = False
 
         if self.config.data.magnitude:
             self.use_magnitudes = True
@@ -76,7 +121,8 @@ class SSLClassificationModel(nn.Module):
             else:
                 self.pooling_embedding_dim = self.config.data.stft_params.spec_dim
             self.global_embedding_dim += self.config.data.stft_params.spec_dim
-        else: self.use_magnitudes = False
+        else:
+            self.use_magnitudes = False
 
         self.articulation = False
 
@@ -88,6 +134,8 @@ class SSLClassificationModel(nn.Module):
 
         self.init_weights()
 
+        self.tf = InvertibleTF()
+
     def init_weights(self):
         # initialize weights of classifier
         for name, param in self.classifier.named_parameters():
@@ -95,7 +143,7 @@ class SSLClassificationModel(nn.Module):
                 nn.init.xavier_normal_(param)
             elif "bias" in name:
                 nn.init.constant_(param, 0)
-        
+
         # initialize weights of pooling layer
         for name, param in self.pooling_layer.named_parameters():
             if "weight" in name:
@@ -107,48 +155,62 @@ class SSLClassificationModel(nn.Module):
 
     def set_ssl_model(self, config):
         if "whisper" in self.config.model.model_name_or_path:
-            self.ssl_model = AutoModel.from_pretrained(self.model_name_or_path, output_hidden_states=self.config.model.use_all_layers)
+            self.ssl_model = AutoModel.from_pretrained(
+                self.model_name_or_path,
+                output_hidden_states=self.config.model.use_all_layers,
+            )
             # take only the encoder part of the model
             self.ssl_model = self.ssl_model.encoder
             self.is_whisper = True
         else:
-            self.ssl_model = AutoModel.from_pretrained(self.model_name_or_path, output_hidden_states=self.config.model.use_all_layers)
+            self.ssl_model = AutoModel.from_pretrained(
+                self.model_name_or_path,
+                output_hidden_states=self.config.model.use_all_layers,
+            )
             self.is_whisper = False
-            
+
         print(f"SSL model is whisper: {self.is_whisper}")
-        print(f'Number of trainable parameters: {sum(p.numel() for p in self.ssl_model.parameters() if p.requires_grad) / 1e6:.2f}M')
-        
+        print(
+            f"Number of trainable parameters: {sum(p.numel() for p in self.ssl_model.parameters() if p.requires_grad) / 1e6:.2f}M"
+        )
+
         if self.config.model.increase_resolution_cnn:
             # change last CNN layer setting stride to 1 instead of 2 (align time resolution)
             self.ssl_model.feature_extractor.conv_layers[6].conv.stride = (1,)
-        
+
         if self.config.model.freeze_ssl:
             # freeze SSL model
             for param in self.ssl_model.parameters():
                 param.requires_grad = False
 
         if self.config.model.use_all_layers:
-            self.layer_weights = nn.Parameter(torch.ones(self.ssl_model.config.num_hidden_layers + 1))
+            self.layer_weights = nn.Parameter(
+                torch.ones(self.ssl_model.config.num_hidden_layers + 1)
+            )
             self.layer_weights.requires_grad = True
-            self.layer_norms = nn.ModuleList([nn.LayerNorm(self.ssl_model.config.hidden_size) for _ in range(self.ssl_model.config.num_hidden_layers + 1)])
+            self.layer_norms = nn.ModuleList(
+                [
+                    nn.LayerNorm(self.ssl_model.config.hidden_size)
+                    for _ in range(self.ssl_model.config.num_hidden_layers + 1)
+                ]
+            )
             self.layer_norms.requires_grad = True
             self.softmax = nn.Softmax(dim=-1)
 
         return
-            
+
     def _get_classification_head(self, pooling_input_dim, global_input_dim):
-        
+
         classifier = nn.Sequential()
         pooling_layer = nn.Sequential()
-        
+
         # first layer
         if self.classifier_type == "average_pooling":
             # no additional layers for pooling
             pass
         elif self.classifier_type == "attention_pooling":
             pooling_layer.add_module(
-                "attention_pooling_head", 
-                AttentionPoolingLayer(pooling_input_dim)
+                "attention_pooling_head", AttentionPoolingLayer(pooling_input_dim)
             )
 
         # additional layers
@@ -160,24 +222,18 @@ class SSLClassificationModel(nn.Module):
                     input_size = self.hidden_size
 
                 classifier.add_module(
-                    f"layer_{layer}",
-                    nn.Linear(input_size, self.hidden_size)
+                    f"layer_{layer}", nn.Linear(input_size, self.hidden_size)
                 )
+                classifier.add_module(f"layer_{layer}_activation", nn.ReLU())
                 classifier.add_module(
-                    f"layer_{layer}_activation",
-                    nn.ReLU()
-                )
-                classifier.add_module(
-                    f"layer_{layer}_dropout",
-                    nn.Dropout(self.dropout)
+                    f"layer_{layer}_dropout", nn.Dropout(self.dropout)
                 )
         elif self.config.model.classifier_head_type == "transformer":
             # input linear layer
             classifier.add_module(
-                "input_layer",
-                nn.Linear(global_input_dim, self.hidden_size)
+                "input_layer", nn.Linear(global_input_dim, self.hidden_size)
             )
-            
+
             # transformer layer
             layer = nn.TransformerEncoderLayer(
                 d_model=self.hidden_size,
@@ -192,24 +248,17 @@ class SSLClassificationModel(nn.Module):
                 nn.TransformerEncoder(
                     encoder_layer=layer,
                     num_layers=self.num_layers,
-                )
+                ),
             )
 
         if self.num_classes == 2:
             # binary classification
-            classifier.add_module(
-                "final_layer",
-                nn.Linear(self.hidden_size, 1)
-            )
-            classifier.add_module(
-                "final_layer_activation",
-                nn.Sigmoid()
-            )
+            classifier.add_module("final_layer", nn.Linear(self.hidden_size, 1))
+            classifier.add_module("final_layer_activation", nn.Sigmoid())
         else:
             # multi-class classification
             classifier.add_module(
-                "final_layer",
-                nn.Linear(self.hidden_size, self.num_classes)
+                "final_layer", nn.Linear(self.hidden_size, self.num_classes)
             )
             # no softmax for cross-entropy loss
             # classifier.add_module(
@@ -237,7 +286,9 @@ class SSLClassificationModel(nn.Module):
             ssl_hidden_state = torch.zeros_like(ssl_hidden_states[-1])
             weights = self.softmax(self.layer_weights)
             for i in range(self.ssl_model.config.num_hidden_layers + 1):
-                ssl_hidden_state += weights[i] * self.layer_norms[i](ssl_hidden_states[i])
+                ssl_hidden_state += weights[i] * self.layer_norms[i](
+                    ssl_hidden_states[i]
+                )
 
         else:
             ssl_hidden_state = self.ssl_model(
@@ -246,34 +297,40 @@ class SSLClassificationModel(nn.Module):
             ).last_hidden_state
 
         return ssl_hidden_state
-    
+
     def _combine_features(self, ssl_features, magnitudes):
         combined_features = torch.cat([ssl_features, magnitudes], dim=-1)
         return combined_features
 
-    def forward(
-        self,
-        batch,
-        **kwargs
-    ):
+    def forward(self, ssl_input, phase=None, mask=None,  **kwargs):
 
         features = None
 
         if self.ssl:
             # forward pass through SSL model
             if self.is_whisper:
-                ssl_input = batch["input_features"] 
-            else:
-                ssl_input = batch["input_values"]
+                raise Exception("Attributions not implemented for Whisper.")
+                #  ssl_input = batch["input_features"]
+                # else:
+                # ssl_input = batch["input_values"]
+
+            if mask is not None:
+               ssl_input = ssl_input * mask
+
+            # Required to compute gradient wrt to spec
+            if phase is not None:  # has spec and phase
+                ssl_input = self.tf.invert_stft_with_phase(ssl_input, phase)
+
             features = self.get_ssl_features(ssl_input)
-        
+
         if self.use_magnitudes:
-            magnitudes = batch["magnitudes"]
-            if self.config.model.frame_fusion:
-                features = self._combine_features(features, magnitudes)
-            else:
-                features = magnitudes
-        
+            raise Exception("Attributions not implemented for use_magnitudes.")
+            # magnitudes = batch["magnitudes"]
+            # if self.config.model.frame_fusion:
+            # features = self._combine_features(features, magnitudes)
+            # else:
+            # features = magnitudes
+
         if features is not None:
             if self.classifier_type == "average_pooling":
                 # average pooling

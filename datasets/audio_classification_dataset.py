@@ -14,6 +14,7 @@ from spafe.features.gfcc import gfcc as gfcc_extractor
 from spafe.features.gfcc import erb_spectrogram
 from spafe.fbanks.gammatone_fbanks import gammatone_filter_banks as gt_fbanks 
 from spafe.utils.preprocessing import SlidingWindow
+import numpy as np 
 
 class AudioClassificationDataset(Dataset):
     def __init__(
@@ -72,26 +73,6 @@ class AudioClassificationDataset(Dataset):
     '''
 
     def _load_audio(self, audio_path):
-        # audio, sr = torchaudio.load(audio_path)
-        # #audio, sr = librosa.load(audio_path, sr=None, mono=False)
-        # #Resample if needed
-        # if sr != self.feature_extractor.sampling_rate:
-        #     resampler = torchaudio.transforms.Resample(sr, self.feature_extractor.sampling_rate)
-        #     audio = resampler(audio)
-        # # # Resample if needed
-        # # if sr != self.feature_extractor.sampling_rate:
-        # #     audio = librosa.resample(audio, orig_sr=sr, target_sr=self.feature_extractor.sampling_rate)
-        
-        # # convert to tensor
-        # #audio = torch.tensor(audio).unsqueeze(0)
-
-        # # convert to mono if needed
-        # if audio.shape[0] > 1:
-        #     audio = torch.mean(audio, dim=0, keepdim=True)
-
-        # # remove empty dimensions
-        # audio = torch.squeeze(audio)
-        # return audio
         audio, sr = librosa.load(audio_path, sr=self.data_config.sample_rate)
         if len(audio.shape) > 1:
             audio = audio.mean(axis=0)
@@ -386,6 +367,18 @@ class AudioClassificationDataset(Dataset):
             item["labels"] = torch.tensor(self.class_mapping[self.labels[idx]], dtype=torch.float)
         else:
             item["labels"] = torch.tensor(self.class_mapping[self.labels[idx]], dtype=torch.long)
+
+        
+        if "DDK_analysis" in audio_path:
+            item["speech_task"] = "DDK"
+        elif "read_text" in audio_path:
+            item["speech_task"] = "read_text"
+        elif "sentence" in audio_path:
+            item["speech_task"] = "sentence"
+        elif "monologue" in audio_path:
+            item["speech_task"] = "monologue"
+            
+        
             
         # speaker_id = os.path.basename(audio_path)
         # speaker_id = speaker_id.split("_")[0]
