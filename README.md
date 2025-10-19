@@ -212,12 +212,13 @@ Ensure you use the configuration file located at `configs/cnn14.yaml` for the tr
 If you use this code, results from this project or you want to refer to the paper, please cite the following paper:
 
 ```bibtex
-@article{mancini2024investigating,
-  title = {Investigating the Effectiveness of Explainability Methods in Parkinson's Detection from Speech},
-  author = {Mancini, Eleonora and Paissan, Francesco and Torroni, Paolo and Ravanelli, Mirco and Subakan, Cem},
-  journal = {arXiv preprint arXiv:2411.08013},
-  year = {2024}
-}
+@inproceedings{mancini2025parkinsonsxai,
+  author={Mancini, Eleonora and Paissan, Francesco and Torroni, Paolo and Ravanelli, Mirco and Subakan, Cem},
+  booktitle={2025 IEEE International Conference on Acoustics, Speech, and Signal Processing Workshops (ICASSPW)}, 
+  title={Investigating the Effectiveness of Explainability Methods in Parkinson’s Detection from Speech}, 
+  year={2025},
+  pages={1-5},
+  doi={10.1109/ICASSPW65056.2025.11011035}}
 ```
 
 <!-- # SSL4PR: Self-supervised learning for Parkinson's Recognition
